@@ -1,0 +1,26 @@
+name: prasarana_live_transit
+description: "A gorgeous, high-fidelity Prasarana Kuala Lumpur Bus Transit & Live Tracking app built with Flutter."
+version: 1.0.0+1
+
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_map: ^7.0.2
+  geolocator: ^11.0.0
+  http: ^1.6.0
+  latlong2: ^0.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/providers.json
