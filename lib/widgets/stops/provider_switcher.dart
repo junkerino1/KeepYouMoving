@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import '../../models/transit_provider.dart';
 import '../../theme/app_theme.dart';
 
-/// Short display label for a provider (e.g. `Rapid KL`).
-String providerShortLabel(TransitProvider provider) {
-  switch (provider.providerKey) {
+/// Short display label for a provider key (e.g. `Rapid KL`).
+String providerShortLabelForKey(String providerKey) {
+  switch (providerKey) {
     case 'rapid_bus_kl':
       return 'Rapid KL';
     case 'rapid_bus_mrtfeeder':
       return 'MRT Feeder';
     default:
-      return provider.providerName;
+      return providerKey;
   }
 }
+
+/// Short display label for a provider (e.g. `Rapid KL`).
+String providerShortLabel(TransitProvider provider) =>
+    providerShortLabelForKey(provider.providerKey);
 
 /// Segmented toggle to switch the active provider. Communicates the selection
 /// back through [onSelected]; all business logic stays in the caller.
