@@ -23,7 +23,7 @@ class TurnstileService {
       siteKey: ApiConfig.turnstileSiteKey,
       // Must match the domain allowlisted in the Turnstile widget config.
       baseUrl: "https://keepyoumoving.samsam123.name.my",
-      action: 'app-bootstrap',
+      action: 'issue_pow',
       options: TurnstileOptions(
         theme: TurnstileTheme.auto,
         retryAutomatically: true,

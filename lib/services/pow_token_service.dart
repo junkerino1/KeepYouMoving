@@ -96,7 +96,7 @@ class PowTokenService {
   }) async {
     final appVersion = await _appVersion();
     final body = {
-      'turnstile_token': "ab65a86c-fb17-4a7d-b0e4-4bcc249af797" ?? turnstileToken,
+      'turnstile_token': turnstileToken,
       'device_id': deviceId,
       'platform': _platformName,
       'app_version': appVersion,
@@ -113,9 +113,12 @@ class PowTokenService {
     );
     debugPrint('[pow-token] response status: ${response.statusCode}');
     if (response.statusCode != 201) {
+      debugPrint('[pow-token] POW API Failed Response: ${response.body}');
       throw PowTokenException(
         'PoW exchange failed (HTTP ${response.statusCode}).',
       );
+      // Output whole JSON
+
     }
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final data = decoded['data'] as Map<String, dynamic>?;
