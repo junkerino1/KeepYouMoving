@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import '../controllers/route_controller.dart';
 import '../controllers/stop_controller.dart';
+import '../models/route_stop.dart';
 import '../models/stop.dart';
 import '../models/transit_provider.dart';
 import '../models/transit_route.dart';
@@ -12,12 +14,15 @@ import '../services/provider_repository.dart';
 import '../services/route_list_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/map_status_chip.dart';
+import '../widgets/map/live_bus_marker.dart';
 import '../widgets/map/live_map.dart';
 import '../widgets/map/nearest_stop_marker.dart';
+import '../widgets/map/stop_dot.dart';
 import '../widgets/map/user_location_marker.dart';
 import '../widgets/sheets/live_map_bottom_sheet.dart';
 import '../widgets/sheets/sheet_snap.dart';
 import '../widgets/stops/provider_switcher.dart';
+import 'route_detail_screen.dart';
 import 'stop_detail_screen.dart';
 
 class LiveMapScreen extends StatefulWidget {
@@ -92,6 +97,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   ProviderTheme get _providerTheme =>
       ProviderTheme.of(_selectedProvider?.providerKey);
 
+  // --- Route context: when a route is selected, its polyline, stops, and
+  // live vehicles are plotted on the map. ---
+  final RouteController _routeController = RouteController();
+  TransitRoute? _activeRoute;
+  Timer? _routeRefreshTimer;
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +114,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   void dispose() {
     _positionSub?.cancel();
     _stopController.dispose();
+    _routeRefreshTimer?.cancel();
+    _routeController.dispose();
     super.dispose();
   }
 
@@ -149,10 +162,39 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     }
   }
 
-  /// Forwards a selected bus line to the Routes tab, which filters with its
-  /// existing search logic.
+  /// Shows the selected route on the map (plotted) instead of forwarding to
+  /// the Routes tab.
   void _onRouteSearchSelected(TransitRoute route) {
-    widget.onOpenRouteSearch?.call(route.routeShortName);
+    _showRouteOnMap(route);
+  }
+
+  /// Opens the route detail screen from the active route context.
+  void _openRouteDetailFromContext() {
+    final route = _activeRoute;
+    final provider = _selectedProvider;
+    if (route == null || provider == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteDetailScreen(
+          route: route,
+          providerId: provider.id,
+          providerKey: provider.providerKey,
+        ),
+      ),
+    );
+  }
+
+  /// Toggles the direction for the active route and reloads geometry.
+  void _onRouteDirectionToggle() {
+    final provider = _selectedProvider;
+    if (provider == null) return;
+    final dirs = _routeController.directions;
+    if (dirs.length < 2) return;
+    final current = _routeController.selectedDirection ?? dirs.first;
+    final next = dirs.firstWhere((d) => d != current, orElse: () => current);
+    _routeController.selectDirection(next);
+    _routeController.ensureGeometry(providerId: provider.id);
+    _fitMapToRoute();
   }
 
   /// Fetches the nearest stops for the selected provider around the user's
@@ -392,6 +434,127 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     setState(() => _selectedProvider = provider);
     _refreshStops();
     _loadRoutes();
+    _clearRouteContext();
+  }
+
+  // --- Route context ---
+
+  /// Shows a route on the map: loads its stops, geometry, and live vehicles,
+  /// then plots them. Periodically refreshes the live vehicles.
+  Future<void> _showRouteOnMap(TransitRoute route) async {
+    final provider = _selectedProvider;
+    if (provider == null) return;
+
+    setState(() => _activeRoute = route);
+    _routeRefreshTimer?.cancel();
+
+    // Load route stops and geometry.
+    await _routeController.loadRouteStops(
+      providerId: provider.id,
+      routeId: route.routeId,
+    );
+    if (!mounted || _activeRoute?.routeId != route.routeId) return;
+
+    // Default direction to the one serving the most stops.
+    final dirs = _routeController.directions;
+    if (dirs.isNotEmpty) {
+      _routeController.selectDirection(dirs.first);
+    }
+
+    await _routeController.ensureGeometry(providerId: provider.id);
+    if (!mounted || _activeRoute?.routeId != route.routeId) return;
+
+    // Load live vehicles.
+    await _routeController.loadRouteLiveVehicles(
+      providerId: provider.id,
+      routeId: route.routeId,
+    );
+
+    // Periodically refresh live vehicles every 15 seconds.
+    _routeRefreshTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) {
+        if (_activeRoute?.routeId == route.routeId) {
+          _routeController.loadRouteLiveVehicles(
+            providerId: provider.id,
+            routeId: route.routeId,
+          );
+        }
+      },
+    );
+
+    // Fit the map to show the route geometry.
+    _fitMapToRoute();
+  }
+
+  /// Clears the route context from the map.
+  void _clearRouteContext() {
+    _routeRefreshTimer?.cancel();
+    setState(() => _activeRoute = null);
+  }
+
+  /// Fits the map camera to show the full route geometry.
+  void _fitMapToRoute() {
+    final geometry = _routeController.selectedGeometry;
+    if (geometry == null || geometry.isEmpty) return;
+
+    try {
+      double minLat = geometry.first.latitude;
+      double maxLat = geometry.first.latitude;
+      double minLon = geometry.first.longitude;
+      double maxLon = geometry.first.longitude;
+      for (final point in geometry) {
+        if (point.latitude < minLat) minLat = point.latitude;
+        if (point.latitude > maxLat) maxLat = point.latitude;
+        if (point.longitude < minLon) minLon = point.longitude;
+        if (point.longitude > maxLon) maxLon = point.longitude;
+      }
+      final center = LatLng(
+        (minLat + maxLat) / 2,
+        (minLon + maxLon) / 2,
+      );
+      // Calculate zoom to fit the bounds.
+      final latSpan = maxLat - minLat;
+      final lonSpan = maxLon - minLon;
+      final span = latSpan > lonSpan ? latSpan : lonSpan;
+      double zoom = 14.0;
+      if (span < 0.01) {
+        zoom = 16.0;
+      } else if (span < 0.02) {
+        zoom = 15.0;
+      } else if (span < 0.05) {
+        zoom = 14.0;
+      } else if (span < 0.1) {
+        zoom = 13.0;
+      } else {
+        zoom = 12.0;
+      }
+
+      _mapController.move(center, zoom);
+    } catch (_) {
+      // Map may not be laid out yet.
+    }
+  }
+
+  /// Opens the route detail screen from a route stop marker tap.
+  void _onRouteStopTap(RouteStop routeStop) {
+    final provider = _selectedProvider;
+    final route = _activeRoute;
+    if (provider == null || route == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StopDetailScreen(
+          stopName: routeStop.stopName,
+          stopLine: route.routeShortName,
+          latitude: routeStop.stopLat,
+          longitude: routeStop.stopLon,
+          stopId: routeStop.stopId,
+          providerId: provider.id,
+          providerKey: provider.providerKey,
+          route: route,
+        ),
+      ),
+    );
   }
 
   /// Records the tapped stop so a speech bubble can be shown above its marker.
@@ -409,8 +572,21 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: _stopController,
+      listenable: Listenable.merge([_stopController, _routeController]),
       builder: (context, _) {
+        // Route polyline
+        final selectedGeometry = _routeController.selectedGeometry;
+        final polylines =
+            (selectedGeometry != null && selectedGeometry.isNotEmpty)
+                ? [
+                    Polyline(
+                      points: selectedGeometry,
+                      strokeWidth: 6,
+                      color: _providerTheme.primary.withValues(alpha: 0.8),
+                    ),
+                  ]
+                : <Polyline>[];
+
         final markerLayers = <MarkerLayer>[
           // Marker for the user's live location (only once it's known).
           if (_currentPosition != null)
@@ -425,7 +601,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ],
             ),
           // Nearest stops for the currently selected provider
-          if (_stopController.hasStops)
+          // (hidden when a route is active to avoid clutter).
+          if (_stopController.hasStops && _activeRoute == null)
             MarkerLayer(
               markers: [
                 for (final stop in _stopController.stops)
@@ -437,6 +614,49 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     child: NearestStopMarker(
                       color: _providerTheme.primary,
                       onTap: () => _onMarkerTap(stop),
+                    ),
+                  ),
+              ],
+            ),
+          // Route stops (when a route is active).
+          if (_activeRoute != null &&
+              _routeController.hasLoadedStops &&
+              _routeController.selectedDirectionStops.isNotEmpty)
+            MarkerLayer(
+              markers: [
+                for (final stop
+                    in _routeController.selectedDirectionStops)
+                  Marker(
+                    point: LatLng(stop.stopLat, stop.stopLon),
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    child: GestureDetector(
+                      onTap: () => _onRouteStopTap(stop),
+                      child: StopDot(color: _providerTheme.primary),
+                    ),
+                  ),
+              ],
+            ),
+          // Live buses for the active route.
+          if (_activeRoute != null &&
+              _routeController.selectedDirectionRouteVehicles.isNotEmpty)
+            MarkerLayer(
+              markers: [
+                for (final bus
+                    in _routeController.selectedDirectionRouteVehicles)
+                  Marker(
+                    point: LatLng(
+                      bus.position.latitude,
+                      bus.position.longitude,
+                    ),
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    child: LiveBusMarker(
+                      color: _providerTheme.primary,
+                      bearing: bus.position.bearing,
+                      bearingIsExplicit: bus.position.bearingIsExplicit,
                     ),
                   ),
               ],
@@ -453,6 +673,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               tileUrlTemplate: Theme.of(context).brightness == Brightness.dark
                   ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
                   : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+              polylines: polylines,
               markerLayers: markerLayers,
             ),
             // Map controls: reset-north + center-on-location buttons
@@ -512,6 +733,26 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                 top: 12,
                 left: 12,
                 child: MapStatusChip.info(_locationMessage!),
+              ),
+            // Route info bar (when a route is plotted on the map).
+            if (_activeRoute != null)
+              Positioned(
+                top: 12,
+                left: 12,
+                right: 12,
+                child: _RouteInfoBar(
+                  route: _activeRoute!,
+                  theme: _providerTheme,
+                  busCount: _routeController
+                      .selectedDirectionRouteVehicles.length,
+                  stopCount:
+                      _routeController.selectedDirectionStops.length,
+                  isBidirectional: _routeController.isBidirectional,
+                  currentDirection: _routeController.selectedDirection,
+                  onClear: _clearRouteContext,
+                  onViewDetail: () => _openRouteDetailFromContext(),
+                  onDirectionToggle: _onRouteDirectionToggle,
+                ),
               ),
             // Bottom Sheet
             Positioned(
@@ -678,6 +919,163 @@ class _StopBubble extends StatelessWidget {
                   size: 16, color: scheme.onSurfaceVariant),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Route info bar shown at the top of the map when a route is plotted.
+/// Shows route name, live bus count, stop count, direction switcher, and actions.
+class _RouteInfoBar extends StatelessWidget {
+  final TransitRoute route;
+  final ProviderTheme theme;
+  final int busCount;
+  final int stopCount;
+  final bool isBidirectional;
+  final int? currentDirection;
+  final VoidCallback onClear;
+  final VoidCallback onViewDetail;
+  final VoidCallback onDirectionToggle;
+
+  const _RouteInfoBar({
+    required this.route,
+    required this.theme,
+    required this.busCount,
+    required this.stopCount,
+    required this.isBidirectional,
+    required this.currentDirection,
+    required this.onClear,
+    required this.onViewDetail,
+    required this.onDirectionToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: scheme.surface.withValues(alpha: 0.95),
+      elevation: 4,
+      shadowColor: const Color(0x22000000),
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                // Route badge
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: theme.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    route.routeShortName,
+                    style: textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.onPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Stats
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        route.routeLongName,
+                        style: textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (busCount > 0) ...[
+                            Icon(Icons.directions_bus_rounded,
+                                size: 12, color: theme.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              '$busCount live',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: theme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Icon(Icons.location_on_outlined,
+                              size: 12, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$stopCount stops',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Actions
+                IconButton(
+                  icon: Icon(Icons.info_outline_rounded,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  tooltip: 'Route details',
+                  onPressed: onViewDetail,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  tooltip: 'Clear route',
+                  onPressed: onClear,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+            // Direction switcher (only for bidirectional routes)
+            if (isBidirectional) ...[
+              const SizedBox(height: 6),
+              InkWell(
+                onTap: onDirectionToggle,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.swap_horiz_rounded,
+                          size: 14, color: theme.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Direction ${currentDirection ?? 0} — Tap to switch',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: theme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

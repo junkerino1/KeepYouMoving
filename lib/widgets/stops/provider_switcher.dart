@@ -36,10 +36,10 @@ class ProviderSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: providers.map((provider) {
@@ -51,23 +51,35 @@ class ProviderSwitcher extends StatelessWidget {
               button: true,
               selected: selected,
               label: label,
-              child: Material(
-                color:
-                    selected ? providerTheme.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(9),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  color:
+                      selected ? providerTheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: providerTheme.primary
+                                .withValues(alpha: 0.25),
+                            blurRadius: 6,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
                 child: InkWell(
                   onTap: () => onSelected(provider),
-                  borderRadius: BorderRadius.circular(9),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  borderRadius: BorderRadius.circular(11),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
                           Icons.directions_bus_rounded,
-                          size: 14,
+                          size: 15,
                           color: selected
                               ? providerTheme.onPrimary
                               : scheme.onSurfaceVariant,

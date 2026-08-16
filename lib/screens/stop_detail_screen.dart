@@ -249,6 +249,47 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     _routeController.ensureGeometry(providerId: providerId);
   }
 
+  /// Highlights a bus on the map and fetches its stops-away progress.
+  void _onDepartureTap(EtaDeparture departure) {
+    final vehicleId = departure.liveVehicleId;
+    if (vehicleId == null || vehicleId.isEmpty) return;
+
+    // Toggle highlight: tap again to deselect.
+    final currentHighlight = _routeController.highlightedVehicleId;
+    if (currentHighlight == vehicleId) {
+      _routeController.setHighlightedVehicle(null);
+      return;
+    }
+
+    _routeController.setHighlightedVehicle(vehicleId);
+
+    // Fetch stops-away progress for this vehicle.
+    _routeController.loadVehicleProgress(
+      providerId: widget.providerId,
+      publicVehicleId: vehicleId,
+      targetStopId: widget.stopId,
+    );
+
+    // Pan the map to center on the live bus position.
+    final vehiclePos = departure.firstValidVehicle;
+    if (vehiclePos != null && vehiclePos.positionValid) {
+      final busLatLng = LatLng(vehiclePos.latitude, vehiclePos.longitude);
+      try {
+        final camera = _mapController.camera;
+        final height = camera.nonRotatedSize.y;
+        final mapHeight =
+            height > 0 ? height : MediaQuery.sizeOf(context).height;
+        _mapController.move(
+          busLatLng,
+          camera.zoom,
+          offset: Offset(0, -(mapHeight * 0.20)),
+        );
+      } catch (_) {
+        _mapController.move(busLatLng, 16.0);
+      }
+    }
+  }
+
   /// Opens the route-detail screen for the route serving this stop, so the
   /// user can browse its full stop list. Only available with a route context.
   void _openStopsList() {
@@ -384,13 +425,21 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           bus.position.latitude,
                           bus.position.longitude,
                         ),
-                        width: 48,
-                        height: 48,
+                        width: bus.publicVehicleId ==
+                                _routeController.highlightedVehicleId
+                            ? 64
+                            : 48,
+                        height: bus.publicVehicleId ==
+                                _routeController.highlightedVehicleId
+                            ? 64
+                            : 48,
                         alignment: Alignment.center,
                         child: LiveBusMarker(
                           color: _providerTheme.primary,
                           bearing: bus.position.bearing,
                           bearingIsExplicit: bus.position.bearingIsExplicit,
+                          isHighlighted: bus.publicVehicleId ==
+                              _routeController.highlightedVehicleId,
                           onTap: () => _onVehicleTap((
                             position: bus.position,
                             plate: bus.publicVehicleId,
@@ -436,6 +485,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                     onStopsList:
                         widget.route != null ? _openStopsList : null,
                     onSchedule: widget.route != null ? _openSchedule : null,
+                    onDepartureTap: _onDepartureTap,
                   ),
                 ),
                 // Stop-name bubble for the tapped marker (dismiss on outside

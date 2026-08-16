@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Compact loading / error pill shown over the map while nearby stops load.
+/// Compact loading / error / info pill shown over the map.
 class MapStatusChip extends StatelessWidget {
   final bool loading;
   final String? message;
@@ -18,8 +18,7 @@ class MapStatusChip extends StatelessWidget {
         icon = Icons.error_outline_rounded,
         isError = true;
 
-  /// Neutral informational chip (e.g. location unavailable). Muted icon
-  /// instead of the error red.
+  /// Neutral informational chip (e.g. location unavailable).
   const MapStatusChip.info(this.message, {super.key})
       : loading = false,
         icon = Icons.location_off_outlined,
@@ -29,19 +28,30 @@ class MapStatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isError
+              ? scheme.error.withValues(alpha: 0.3)
+              : scheme.outlineVariant,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (loading)
             SizedBox(
-              width: 10,
-              height: 10,
+              width: 14,
+              height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: scheme.primary,
@@ -49,12 +59,14 @@ class MapStatusChip extends StatelessWidget {
             )
           else if (icon != null)
             Icon(icon,
-                size: 12,
+                size: 14,
                 color: isError ? scheme.error : scheme.onSurfaceVariant),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Text(
-            loading ? 'Loading stops…' : (message ?? ''),
-            style: Theme.of(context).textTheme.labelMedium,
+            loading ? 'Loading stops...' : (message ?? ''),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: isError ? scheme.error : null,
+            ),
           ),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../controllers/theme_controller.dart';
+import 'journey_planner_screen.dart';
 import 'live_map_screen.dart';
 import 'profile_screen.dart';
 import 'routes_screen.dart';
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
     LiveMapScreen(onOpenRouteSearch: _openRoutesWithQuery),
     RoutesScreen(externalQuery: _routesQuery),
     const TimetableScreen(),
+    const JourneyPlannerScreen(),
     ProfileScreen(themeController: widget.themeController),
   ];
 
@@ -57,6 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
       icon: Icon(Icons.schedule_outlined),
       selectedIcon: Icon(Icons.schedule_rounded),
       label: 'Timetable',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.directions_outlined),
+      selectedIcon: Icon(Icons.directions_rounded),
+      label: 'Journey',
     ),
     NavigationDestination(
       icon: Icon(Icons.person_outline_rounded),

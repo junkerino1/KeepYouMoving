@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../../models/eta_departure.dart';
+import '../../models/vehicle_progress.dart';
 import '../../theme/app_theme.dart';
 import 'eta_item.dart';
 
@@ -8,6 +9,9 @@ import 'eta_item.dart';
 ///
 /// Pure presentation: receives already-filtered/sorted [departures] and fetch
 /// state from the controller; never performs API calls itself.
+///
+/// [onDepartureTap] is called when a live departure is tapped — the parent
+/// uses this to highlight the bus on the map and fetch stops-away data.
 class ETASection extends StatelessWidget {
   final List<EtaDeparture> departures;
   final bool isLoading;
@@ -16,6 +20,18 @@ class ETASection extends StatelessWidget {
   final DateTime? lastFetchedAt;
   final ProviderTheme theme;
   final LatLng stopPosition;
+
+  /// Called when a live departure is tapped (has a tracked vehicle).
+  final void Function(EtaDeparture departure)? onDepartureTap;
+
+  /// The public vehicle ID currently highlighted (from a prior tap).
+  final String? highlightedVehicleId;
+
+  /// Progress data per vehicle+stop key (e.g. "VG6493/12003284").
+  final VehicleProgress? Function(String key)? getVehicleProgress;
+
+  /// Whether progress is loading for a given key.
+  final bool Function(String key)? isLoadingVehicleProgress;
 
   const ETASection({
     super.key,
@@ -26,17 +42,19 @@ class ETASection extends StatelessWidget {
     required this.lastFetchedAt,
     required this.theme,
     required this.stopPosition,
+    this.onDepartureTap,
+    this.highlightedVehicleId,
+    this.getVehicleProgress,
+    this.isLoadingVehicleProgress,
   });
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    // Only show departures within the next hour.
     final withinHour = departures
         .where((d) => d.countdownMinutes() <= 60)
         .toList();
-    // Departures actually rendered (capped at 4).
     final displayed = withinHour.take(4).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,14 +89,34 @@ class ETASection extends StatelessWidget {
             ),
           )
         else
-          ...displayed.map((departure) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: EtaItem(
-                  departure: departure,
-                  theme: theme,
-                  stopPosition: stopPosition,
-                ),
-              )),
+          ...displayed.map((departure) {
+            final vehicleId = departure.liveVehicleId;
+            final progressKey = vehicleId != null
+                ? '$vehicleId/${departure.stopId}'
+                : null;
+            final isHighlighted = vehicleId != null &&
+                vehicleId == highlightedVehicleId;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: EtaItem(
+                departure: departure,
+                theme: theme,
+                stopPosition: stopPosition,
+                onTap: departure.firstValidVehicle != null &&
+                        onDepartureTap != null
+                    ? () => onDepartureTap!(departure)
+                    : null,
+                vehicleProgress: progressKey != null && getVehicleProgress != null
+                    ? getVehicleProgress!(progressKey)
+                    : null,
+                isLoadingProgress: progressKey != null &&
+                        isLoadingVehicleProgress != null
+                    ? isLoadingVehicleProgress!(progressKey)
+                    : false,
+                isHighlighted: isHighlighted,
+              ),
+            );
+          }),
       ],
     );
   }
@@ -86,8 +124,6 @@ class ETASection extends StatelessWidget {
   Widget _buildHeader(BuildContext context, List<EtaDeparture> displayed) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    // "Live" only when at least one displayed departure is a tracked vehicle;
-    // otherwise the arrivals are timetable-based.
     final hasLive = displayed.any((d) => d.firstValidVehicle != null);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -129,7 +165,6 @@ class ETASection extends StatelessWidget {
   }
 }
 
-/// e.g. `(14:30)`.
 String _formatTime(DateTime time) {
   final h = time.hour.toString().padLeft(2, '0');
   final m = time.minute.toString().padLeft(2, '0');

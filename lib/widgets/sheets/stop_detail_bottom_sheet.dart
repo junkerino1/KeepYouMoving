@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../../controllers/route_controller.dart';
+import '../../models/eta_departure.dart';
 import '../../theme/app_theme.dart';
 import '../live_bus/eta_section.dart';
 import '../stops/direction_selector.dart';
@@ -23,6 +24,7 @@ class StopDetailBottomSheet extends StatefulWidget {
     required this.onDirectionToggle,
     this.onStopsList,
     this.onSchedule,
+    this.onDepartureTap,
   });
 
   final RouteController controller;
@@ -33,6 +35,7 @@ class StopDetailBottomSheet extends StatefulWidget {
   final VoidCallback onDirectionToggle;
   final VoidCallback? onStopsList;
   final VoidCallback? onSchedule;
+  final void Function(EtaDeparture departure)? onDepartureTap;
 
   @override
   State<StopDetailBottomSheet> createState() => _StopDetailBottomSheetState();
@@ -100,6 +103,13 @@ class _StopDetailBottomSheetState extends State<StopDetailBottomSheet> {
                     lastFetchedAt: widget.controller.lastEtaFetchedAt,
                     theme: widget.theme,
                     stopPosition: widget.stopPosition,
+                    onDepartureTap: widget.onDepartureTap,
+                    highlightedVehicleId:
+                        widget.controller.highlightedVehicleId,
+                    getVehicleProgress: (key) =>
+                        widget.controller.vehicleProgress(key),
+                    isLoadingVehicleProgress: (key) =>
+                        widget.controller.isLoadingProgress(key),
                   ),
                 ],
               ),

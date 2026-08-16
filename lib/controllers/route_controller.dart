@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/eta_departure.dart';
 import '../models/route_live_vehicle.dart';
 import '../models/route_stop.dart';
+import '../models/vehicle_progress.dart';
 import '../services/api_service.dart';
 import '../utils/api_envelope.dart';
 
@@ -38,6 +39,13 @@ class RouteController extends ChangeNotifier {
   List<RouteLiveVehicle> _routeVehicles = [];
   bool _isLoadingRouteVehicles = false;
   String? _routeVehiclesError;
+
+  // Vehicle progress (stops-away) per public vehicle ID.
+  final Map<String, VehicleProgress> _vehicleProgress = {};
+  final Map<String, bool> _vehicleProgressLoading = {};
+
+  // Highlighted vehicle (tapped from ETA list).
+  String? _highlightedVehicleId;
 
   List<RouteStop> get stops => List.unmodifiable(_stops);
   bool get isLoadingStops => _isLoadingStops;
@@ -91,12 +99,39 @@ class RouteController extends ChangeNotifier {
     return dir == null ? null : _geometryError[_geometryKey(dir)];
   }
 
-  /// Loads the route's stops once and selects the lowest present direction
-  /// (0 if available, otherwise 1 — never assumed).
+  /// Resets all cached state so a new route can be loaded. Must be called
+  /// before loading a different route to clear stale data from the previous
+  /// route.
+  void resetForNewRoute() {
+    _stops = [];
+    _stopsLoaded = false;
+    _stopsError = null;
+    _selectedDirection = null;
+    _geometryCache.clear();
+    _geometryLoading.clear();
+    _geometryError.clear();
+    _departures = [];
+    _etaError = null;
+    _lastEtaFetchedAt = null;
+    _routeVehicles = [];
+    _routeVehiclesError = null;
+    _vehicleProgress.clear();
+    _vehicleProgressLoading.clear();
+    _highlightedVehicleId = null;
+    notifyListeners();
+  }
+
+  /// Loads the route's stops and selects the lowest present direction
+  /// (0 if available, otherwise 1 — never assumed). Resets cached data
+  /// if a different route is being loaded.
   Future<void> loadRouteStops({
     required int providerId,
     required String routeId,
   }) async {
+    // If switching to a different route, reset cached state first.
+    if (_routeId != routeId) {
+      resetForNewRoute();
+    }
     _routeId = routeId;
     if (_isLoadingStops || (_stopsLoaded && _stops.isNotEmpty)) return;
 
@@ -292,6 +327,58 @@ class RouteController extends ChangeNotifier {
       _routeVehiclesError = 'Could not load live buses.';
     } finally {
       _isLoadingRouteVehicles = false;
+      notifyListeners();
+    }
+  }
+
+  // --- Vehicle progress (stops-away) ---
+
+  /// Progress for a specific vehicle, or null if not loaded.
+  VehicleProgress? vehicleProgress(String publicVehicleId) =>
+      _vehicleProgress[publicVehicleId];
+
+  /// Whether progress is loading for a specific vehicle.
+  bool isLoadingProgress(String publicVehicleId) =>
+      _vehicleProgressLoading[publicVehicleId] ?? false;
+
+  /// The vehicle ID currently highlighted on the map (from ETA tap).
+  String? get highlightedVehicleId => _highlightedVehicleId;
+
+  /// Sets the highlighted vehicle (tapped from the ETA list). Pass null to
+  /// clear the highlight.
+  void setHighlightedVehicle(String? publicVehicleId) {
+    if (_highlightedVehicleId == publicVehicleId) return;
+    _highlightedVehicleId = publicVehicleId;
+    notifyListeners();
+  }
+
+  /// Fetches the stops-away progress for a specific vehicle approaching a
+  /// target stop. Results are cached per vehicle+stop combination.
+  Future<void> loadVehicleProgress({
+    required int providerId,
+    required String publicVehicleId,
+    required String targetStopId,
+  }) async {
+    final cacheKey = '$publicVehicleId/$targetStopId';
+    if (_vehicleProgressLoading[cacheKey] == true) return;
+
+    _vehicleProgressLoading[cacheKey] = true;
+    notifyListeners();
+    try {
+      final response = await _api.get(
+        '$providerId/live_location/vehicle/$publicVehicleId/progress'
+        '?target_stop_id=$targetStopId',
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Server responded with ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = decoded['data'] as Map<String, dynamic>? ?? {};
+      _vehicleProgress[cacheKey] = VehicleProgress.fromJson(data);
+    } catch (_) {
+      // Silently fail; the UI just won't show stops-away.
+    } finally {
+      _vehicleProgressLoading[cacheKey] = false;
       notifyListeners();
     }
   }

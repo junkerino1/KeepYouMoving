@@ -21,7 +21,7 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
   }
 
@@ -44,27 +44,42 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
             animation: _controller,
             builder: (context, _) {
               final t = _controller.value;
-              // Grows from a small dot to the full box while fading out.
-              final size = 24 + 300 * t;
-              final alpha = 0.50 * (1 - t);
+              final size = 20 + 350 * t;
+              final alpha = 0.45 * (1 - t);
               return Container(
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.red.withValues(alpha: alpha),
+                  color: AppColors.sky.withValues(alpha: alpha),
                 ),
               );
             },
           ),
-          // Red dot with a white border (streaming-location style).
+          // White outer ring
           Container(
-            width: 26,
-            height: 26,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.red,
-              border: Border.all(color: AppColors.white, width: 3),
+              color: AppColors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.sky.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          ),
+          // Blue inner dot (matches M3 location marker style).
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.sky,
+              border: Border.all(color: AppColors.white, width: 2),
             ),
           ),
         ],
