@@ -291,13 +291,13 @@ class RouteController extends ChangeNotifier {
   bool get isLoadingRouteVehicles => _isLoadingRouteVehicles;
   String? get routeVehiclesError => _routeVehiclesError;
 
-  /// Live buses for the selected direction, from the route live-location
-  /// endpoint (used to plot buses on the map).
-  List<RouteLiveVehicle> get selectedDirectionRouteVehicles {
-    final dir = _selectedDirection;
-    if (dir == null) return List.unmodifiable(_routeVehicles);
-    return _routeVehicles.where((v) => v.directionId == dir).toList();
-  }
+  /// Live buses for the route, from the route live-location endpoint.
+  /// Returns ALL vehicles on the route regardless of direction — the
+  /// live-location endpoint returns vehicles for the whole route, and
+  /// direction filtering is unreliable (vehicles may have null or
+  /// mismatched direction_id values).
+  List<RouteLiveVehicle> get selectedDirectionRouteVehicles =>
+      List.unmodifiable(_routeVehicles);
 
   /// Fetches live bus locations for the whole route via the dedicated
   /// live-location endpoint. Only the real-time positions are refreshed —

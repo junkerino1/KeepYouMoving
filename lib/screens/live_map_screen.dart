@@ -10,6 +10,7 @@ import '../models/route_stop.dart';
 import '../models/stop.dart';
 import '../models/transit_provider.dart';
 import '../models/transit_route.dart';
+import '../services/app_location_service.dart';
 import '../services/provider_repository.dart';
 import '../services/route_list_cache.dart';
 import '../theme/app_theme.dart';
@@ -184,16 +185,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
   }
 
-  /// Toggles the direction for the active route and reloads geometry.
+  /// Toggles the direction for the active route and reloads geometry + vehicles.
   void _onRouteDirectionToggle() {
     final provider = _selectedProvider;
-    if (provider == null) return;
+    final route = _activeRoute;
+    if (provider == null || route == null) return;
     final dirs = _routeController.directions;
     if (dirs.length < 2) return;
     final current = _routeController.selectedDirection ?? dirs.first;
     final next = dirs.firstWhere((d) => d != current, orElse: () => current);
     _routeController.selectDirection(next);
     _routeController.ensureGeometry(providerId: provider.id);
+    // Refresh live vehicles so they're current for the new direction view.
+    _routeController.loadRouteLiveVehicles(
+      providerId: provider.id,
+      routeId: route.routeId,
+    );
     _fitMapToRoute();
   }
 
@@ -209,11 +216,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
   }
 
-  /// Requests location permission, then starts streaming the user's live
-  /// position so the marker follows the device.
-  ///
-  /// On permission/service failure sets [_locationMessage] so the UI shows an
-  /// honest location-unavailable state instead of a fabricated marker.
+  /// Uses the shared [AppLocationService] to get the initial position
+  /// (single permission request, cached fallback, 10s timeout), then
+  /// starts a live GPS stream so the marker follows the device.
   Future<void> _fetchCurrentLocation() async {
     if (_isLocating) return;
     setState(() {
@@ -222,40 +227,29 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     });
 
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (mounted) {
-          setState(() {
-            _isLocating = false;
-            _locationMessage = 'Location services are off';
-          });
-        }
+      final position =
+          await AppLocationService.instance.getInitialPosition();
+
+      if (!mounted) return;
+
+      if (position == null) {
+        setState(() {
+          _isLocating = false;
+          _locationMessage = 'Could not determine your location';
+        });
         return;
       }
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied) {
-        if (mounted) {
-          setState(() {
-            _isLocating = false;
-            _locationMessage = 'Location permission denied';
-          });
-        }
-        return;
-      }
-      if (permission == LocationPermission.deniedForever) {
-        if (mounted) {
-          setState(() {
-            _isLocating = false;
-            _locationMessage = 'Location is disabled in settings';
-          });
-        }
-        return;
-      }
+      final latLng = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _currentPosition = latLng;
+        _isLocating = false;
+        _locationMessage = null;
+      });
+      _centerOn(latLng);
+      _refreshStopsIfMoved(latLng, force: true);
 
+      // Start live stream for continuous updates.
       await _startPositionStream();
     } catch (_) {
       if (mounted) {
@@ -274,12 +268,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   /// stops refresh again once the user has moved a meaningful distance.
   Future<void> _startPositionStream() async {
     await _positionSub?.cancel();
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      // 0 = emit every update (no distance filter).
-      distanceFilter: 0,
-    );
-    _positionSub = Geolocator.getPositionStream(locationSettings: settings)
+    _positionSub = AppLocationService.instance
+        .getPositionStream(accuracy: LocationAccuracy.high)
         .listen(
       (position) {
         if (!mounted) return;

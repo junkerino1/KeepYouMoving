@@ -7,9 +7,8 @@ import 'home_screen.dart';
 
 /// Material 3 animated splash shown during app bootstrap.
 ///
-/// Displays a branded logo with a subtle pulse, step-by-step progress
-/// indicators with animated checkmarks, and a smooth progress bar.
-/// On failure shows a recovery state with retry.
+/// Displays the RapidTransit KL branding, initialization progress,
+/// animated service status, and a recovery state if bootstrap fails.
 class BootstrapScreen extends StatefulWidget {
   const BootstrapScreen({
     super.key,
@@ -30,6 +29,7 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   @override
   void initState() {
     super.initState();
+
     widget.service.addListener(_onBootstrapChanged);
     widget.service.start();
   }
@@ -43,12 +43,15 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   void _onBootstrapChanged() {
     if (widget.service.status == BootstrapStatus.ready && !_navigated) {
       _navigated = true;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (_, __, ___) =>
-                HomeScreen(themeController: widget.themeController),
+            pageBuilder: (_, __, ___) => HomeScreen(
+              themeController: widget.themeController,
+            ),
             transitionsBuilder: (_, animation, __, child) {
               return FadeTransition(
                 opacity: CurvedAnimation(
@@ -68,6 +71,7 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   @override
   Widget build(BuildContext context) {
     final service = widget.service;
+
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
@@ -88,9 +92,11 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   }
 }
 
-/// Animated splash: logo pulse, step indicators, smooth progress bar.
+/// Main bootstrap view.
 class _RunningView extends StatefulWidget {
-  const _RunningView({required this.service});
+  const _RunningView({
+    required this.service,
+  });
 
   final BootstrapService service;
 
@@ -106,13 +112,15 @@ class _RunningViewState extends State<_RunningView>
   @override
   void initState() {
     super.initState();
+
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
+
     _shimmerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1600),
     )..repeat();
   }
 
@@ -127,58 +135,138 @@ class _RunningViewState extends State<_RunningView>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
     final service = widget.service;
     final currentStep = _stepIndex(service.progress);
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Animated logo with pulse glow
-              _AnimatedLogo(
-                pulseController: _pulseController,
-                size: 120,
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'RapidTransit KL',
-                style: textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Kuala Lumpur transit, live',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 40),
-              // Step indicators
-              _StepIndicators(
-                currentStep: currentStep,
-                shimmerController: _shimmerController,
-                statusMessage: service.statusMessage,
-              ),
-              const SizedBox(height: 28),
-              // Smooth progress bar
-              _AnimatedProgressBar(
-                progress: service.progress,
-                shimmerController: _shimmerController,
-              ),
-            ],
+    return Stack(
+      children: [
+        // Decorative background glow - top right.
+        Positioned(
+          top: -130,
+          right: -110,
+          child: Container(
+            width: 320,
+            height: 320,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.primary.withValues(alpha: 0.055),
+            ),
           ),
         ),
-      ),
+
+        // Decorative background glow - bottom left.
+        Positioned(
+          bottom: -180,
+          left: -140,
+          child: Container(
+            width: 360,
+            height: 360,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.tertiary.withValues(alpha: 0.045),
+            ),
+          ),
+        ),
+
+        Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 32,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 420,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // App logo.
+                  _AnimatedLogo(
+                    pulseController: _pulseController,
+                    size: 112,
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // Application name.
+                  Text(
+                    'RapidTransit KL',
+                    textAlign: TextAlign.center,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Main initialization title.
+                  Text(
+                    'Preparing your journey',
+                    textAlign: TextAlign.center,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // App description.
+                  Text(
+                    'Setting up live transit data, secure services '
+                        'and everything you need before departure.',
+                    textAlign: TextAlign.center,
+                    style: textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+
+                  const SizedBox(height: 34),
+
+                  // Initialization progress card.
+                  _InitializationCard(
+                    service: service,
+                    currentStep: currentStep,
+                    shimmerController: _shimmerController,
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: scheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'This should only take a moment',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.75,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  /// Maps progress (0.0–1.0) to the current step index (0–4).
+  /// Maps bootstrap progress to the visible initialization stage.
   int _stepIndex(double progress) {
     if (progress < 0.15) return 0;
     if (progress < 0.35) return 1;
@@ -188,54 +276,144 @@ class _RunningViewState extends State<_RunningView>
   }
 }
 
-/// Logo with a subtle breathing pulse glow behind it.
-class _AnimatedLogo extends StatelessWidget {
-  const _AnimatedLogo({
-    required this.pulseController,
-    required this.size,
+/// Main initialization card.
+class _InitializationCard extends StatelessWidget {
+  const _InitializationCard({
+    required this.service,
+    required this.currentStep,
+    required this.shimmerController,
   });
 
-  final AnimationController pulseController;
-  final double size;
+  final BootstrapService service;
+  final int currentStep;
+  final AnimationController shimmerController;
+
+  static const int totalSteps = 5;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AnimatedBuilder(
-      animation: pulseController,
-      builder: (context, child) {
-        final t = pulseController.value;
-        final glowOpacity = 0.08 + 0.12 * t;
-        final glowScale = 1.0 + 0.15 * t;
-        return SizedBox(
-          width: size + 40,
-          height: size + 40,
-          child: Stack(
-            alignment: Alignment.center,
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 28,
+            spreadRadius: 0,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header.
+          Row(
             children: [
-              // Soft glow ring
-              Transform.scale(
-                scale: glowScale,
-                child: Container(
-                  width: size + 20,
-                  height: size + 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.primary.withValues(alpha: glowOpacity),
-                  ),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  Icons.rocket_launch_rounded,
+                  size: 21,
+                  color: scheme.onPrimaryContainer,
                 ),
               ),
-              // Logo
-              SplashLogo(size: size),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Initialization progress',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Step ${currentStep + 1} of $totalSteps',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Percentage chip.
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  end: service.progress.clamp(0.0, 1.0),
+                ),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) {
+                  final percent = (value * 100).round();
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$percent%',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: scheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
-        );
-      },
+
+          const SizedBox(height: 24),
+
+          // Step status.
+          _StepIndicators(
+            currentStep: currentStep,
+            shimmerController: shimmerController,
+            statusMessage: service.statusMessage,
+          ),
+
+          const SizedBox(height: 22),
+
+          // Main overall progress bar.
+          _AnimatedProgressBar(
+            progress: service.progress,
+            shimmerController: shimmerController,
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// Step indicators with animated transitions and labels.
+/// Initialization stages and current status.
 class _StepIndicators extends StatelessWidget {
   const _StepIndicators({
     required this.currentStep,
@@ -247,12 +425,32 @@ class _StepIndicators extends StatelessWidget {
   final AnimationController shimmerController;
   final String statusMessage;
 
-  static const _steps = [
-    _StepData(Icons.settings_outlined, 'Config'),
-    _StepData(Icons.phone_android_outlined, 'Device'),
-    _StepData(Icons.verified_user_outlined, 'Security'),
-    _StepData(Icons.wifi_outlined, 'Connect'),
-    _StepData(Icons.directions_bus_outlined, 'Transit'),
+  static const List<_StepData> _steps = [
+    _StepData(
+      Icons.tune_rounded,
+      'Configuration',
+      'Loading application settings',
+    ),
+    _StepData(
+      Icons.smartphone_rounded,
+      'Device',
+      'Preparing this device',
+    ),
+    _StepData(
+      Icons.shield_rounded,
+      'Security',
+      'Starting secure services',
+    ),
+    _StepData(
+      Icons.wifi_rounded,
+      'Network',
+      'Connecting to transit services',
+    ),
+    _StepData(
+      Icons.directions_transit_rounded,
+      'Transit',
+      'Loading live transit information',
+    ),
   ];
 
   @override
@@ -260,55 +458,150 @@ class _StepIndicators extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final safeIndex = currentStep.clamp(
+      0,
+      _steps.length - 1,
+    );
+
+    final step = _steps[safeIndex];
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Step dots row
+        // Segmented progress indicator.
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_steps.length, (index) {
-            final isCompleted = index < currentStep;
-            final isCurrent = index == currentStep;
-            final isPending = index > currentStep;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (index > 0)
-                  _StepConnector(
-                    active: index <= currentStep,
+          children: List.generate(
+            _steps.length,
+                (index) {
+              final isCompleted = index < safeIndex;
+              final isCurrent = index == safeIndex;
+
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: index == _steps.length - 1 ? 0 : 5,
                   ),
-                _StepDot(
-                  step: _steps[index],
-                  isCompleted: isCompleted,
-                  isCurrent: isCurrent,
-                  isPending: isPending,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOutCubic,
+                    height: isCurrent ? 5 : 4,
+                    decoration: BoxDecoration(
+                      color: isCompleted || isCurrent
+                          ? scheme.primary
+                          : scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                 ),
-              ],
-            );
-          }),
+              );
+            },
+          ),
         ),
-        const SizedBox(height: 16),
-        // Current step label with animated transition
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.3),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            );
-          },
-          child: Text(
-            statusMessage,
-            key: ValueKey(statusMessage),
-            textAlign: TextAlign.center,
-            style: textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
+
+        const SizedBox(height: 20),
+
+        // Current initialization stage.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CurrentStepIcon(
+              icon: step.icon,
+              shimmerController: shimmerController,
             ),
+
+            const SizedBox(width: 14),
+
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.12),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Column(
+                  key: ValueKey<int>(safeIndex),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      step.label,
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      step.description,
+                      style: textTheme.bodySmall?.copyWith(
+                        height: 1.4,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
+
+        // Live service status.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _LoadingDot(
+                shimmerController: shimmerController,
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    );
+                  },
+                  child: Text(
+                    statusMessage,
+                    key: ValueKey<String>(statusMessage),
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -316,102 +609,111 @@ class _StepIndicators extends StatelessWidget {
   }
 }
 
+/// Data describing one initialization stage.
 class _StepData {
-  const _StepData(this.icon, this.label);
+  const _StepData(
+      this.icon,
+      this.label,
+      this.description,
+      );
+
   final IconData icon;
   final String label;
+  final String description;
 }
 
-/// Single step dot: completed (checkmark), current (animated), or pending.
-class _StepDot extends StatelessWidget {
-  const _StepDot({
-    required this.step,
-    required this.isCompleted,
-    required this.isCurrent,
-    required this.isPending,
+/// Animated icon representing the currently-running step.
+class _CurrentStepIcon extends StatelessWidget {
+  const _CurrentStepIcon({
+    required this.icon,
+    required this.shimmerController,
   });
 
-  final _StepData step;
-  final bool isCompleted;
-  final bool isCurrent;
-  final bool isPending;
+  final IconData icon;
+  final AnimationController shimmerController;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final size = isCurrent ? 36.0 : 28.0;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isCompleted
-            ? scheme.primary
-            : isCurrent
-                ? scheme.primaryContainer
-                : scheme.surfaceContainerHigh,
-        border: isCurrent
-            ? Border.all(color: scheme.primary, width: 2)
-            : null,
-        boxShadow: isCurrent
-            ? [
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  spreadRadius: 1,
+    return AnimatedBuilder(
+      animation: shimmerController,
+      builder: (context, _) {
+        final pulse = 0.5 +
+            (0.5 *
+                (1 -
+                    (2 * shimmerController.value - 1).abs()));
+
+        return Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(
+                  alpha: 0.05 + (pulse * 0.10),
                 ),
-              ]
-            : null,
-      ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: isCompleted
-            ? Icon(
-                Icons.check_rounded,
-                key: const ValueKey('check'),
-                size: isCurrent ? 18 : 14,
-                color: scheme.onPrimary,
-              )
-            : Icon(
-                step.icon,
-                key: ValueKey(step.icon),
-                size: isCurrent ? 18 : 14,
-                color: isCurrent
-                    ? scheme.primary
-                    : isPending
-                        ? scheme.onSurfaceVariant.withValues(alpha: 0.4)
-                        : scheme.onSurfaceVariant,
+                blurRadius: 10 + (pulse * 6),
+                spreadRadius: pulse,
               ),
-      ),
+            ],
+          ),
+          child: Icon(
+            icon,
+            size: 24,
+            color: scheme.onPrimaryContainer,
+          ),
+        );
+      },
     );
   }
 }
 
-/// Animated connector line between step dots.
-class _StepConnector extends StatelessWidget {
-  const _StepConnector({required this.active});
+/// Small animated dot used beside the live status message.
+class _LoadingDot extends StatelessWidget {
+  const _LoadingDot({
+    required this.shimmerController,
+  });
 
-  final bool active;
+  final AnimationController shimmerController;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      width: 20,
-      height: 2,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(1),
-        color: active ? scheme.primary : scheme.surfaceContainerHighest,
-      ),
+
+    return AnimatedBuilder(
+      animation: shimmerController,
+      builder: (context, _) {
+        final value = shimmerController.value;
+
+        final pulse =
+            0.6 + (0.4 * (1 - (2 * value - 1).abs()));
+
+        return Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: scheme.primary,
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(
+                  alpha: 0.15 + (pulse * 0.25),
+                ),
+                blurRadius: 5 + (pulse * 5),
+                spreadRadius: pulse,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-/// Smooth progress bar with shimmer effect and percentage.
+/// Smooth animated overall bootstrap progress bar.
 class _AnimatedProgressBar extends StatelessWidget {
   const _AnimatedProgressBar({
     required this.progress,
@@ -424,92 +726,171 @@ class _AnimatedProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: progress),
+      tween: Tween<double>(
+        end: progress.clamp(0.0, 1.0),
+      ),
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeOutCubic,
       builder: (context, value, _) {
-        final percent = (value * 100).clamp(0, 100).round();
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                height: 8,
-                child: Stack(
-                  children: [
-                    // Background
-                    Container(
-                      color: scheme.surfaceContainerHighest,
-                    ),
-                    // Progress fill
-                    FractionallySizedBox(
-                      widthFactor: value,
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: SizedBox(
+            width: double.infinity,
+            height: 8,
+            child: Stack(
+              children: [
+                // Background.
+                Positioned.fill(
+                  child: Container(
+                    color: scheme.surfaceContainerHighest,
+                  ),
+                ),
+
+                // Filled progress.
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: value.clamp(0.0, 1.0),
+                      heightFactor: 1,
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
                               scheme.primary,
-                              scheme.primary.withValues(alpha: 0.8),
+                              scheme.tertiary,
                             ],
                           ),
                         ),
                       ),
                     ),
-                    // Shimmer overlay
-                    if (value < 1.0)
-                      AnimatedBuilder(
-                        animation: shimmerController,
-                        builder: (context, _) {
-                          return FractionallySizedBox(
-                            widthFactor: value,
-                            child: Align(
-                              alignment: Alignment(
-                                2.0 * shimmerController.value - 1.0,
-                                0,
-                              ),
-                              child: Container(
-                                width: 40,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.white.withValues(alpha: 0.3),
-                                      Colors.transparent,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                  ],
+                  ),
                 ),
-              ),
+
+                // Moving shimmer.
+                if (value > 0 && value < 1)
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: shimmerController,
+                      builder: (context, _) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: value.clamp(0.0, 1.0),
+                            heightFactor: 1,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final shimmerWidth = 55.0;
+
+                                final available =
+                                    constraints.maxWidth +
+                                        shimmerWidth;
+
+                                final x =
+                                    (available *
+                                        shimmerController.value) -
+                                        shimmerWidth;
+
+                                return Stack(
+                                  clipBehavior: Clip.hardEdge,
+                                  children: [
+                                    Positioned(
+                                      left: x,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: shimmerWidth,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.white.withValues(
+                                                alpha: 0.38,
+                                              ),
+                                              Colors.transparent,
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              '$percent%',
-              style: textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
+          ),
         );
       },
     );
   }
 }
 
-/// Recovery state: honest error message with retry action.
+/// Logo with a subtle breathing glow.
+class _AnimatedLogo extends StatelessWidget {
+  const _AnimatedLogo({
+    required this.pulseController,
+    required this.size,
+  });
+
+  final AnimationController pulseController;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return AnimatedBuilder(
+      animation: pulseController,
+      builder: (context, child) {
+        final t = pulseController.value;
+
+        final glowOpacity = 0.06 + (0.10 * t);
+        final glowScale = 1.0 + (0.12 * t);
+
+        return SizedBox(
+          width: size + 50,
+          height: size + 50,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(
+                scale: glowScale,
+                child: Container(
+                  width: size + 24,
+                  height: size + 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary.withValues(
+                      alpha: glowOpacity,
+                    ),
+                  ),
+                ),
+              ),
+
+              SplashLogo(
+                size: size,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Recovery state shown if initialization fails.
 class _FailureView extends StatelessWidget {
-  const _FailureView({required this.service});
+  const _FailureView({
+    required this.service,
+  });
 
   final BootstrapService service;
 
@@ -520,75 +901,167 @@ class _FailureView extends StatelessWidget {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 28,
+          vertical: 32,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
+          constraints: const BoxConstraints(
+            maxWidth: 400,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.all(20),
+                width: 84,
+                height: 84,
                 decoration: BoxDecoration(
                   color: scheme.errorContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: Icon(
                   Icons.cloud_off_rounded,
-                  size: 40,
+                  size: 38,
                   color: scheme.onErrorContainer,
                 ),
               ),
+
               const SizedBox(height: 24),
+
               Text(
-                'Couldn\'t prepare the app',
+                'We couldn\'t get things ready',
                 style: textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
+
+              const SizedBox(height: 10),
+
               Text(
-                service.errorMessage ?? 'Please try again.',
+                'RapidTransit KL ran into a problem while '
+                    'preparing the app.',
                 style: textTheme.bodyMedium?.copyWith(
+                  height: 1.5,
                   color: scheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),
-              if (service.failedStep != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Failed at: ${service.failedStep!.label}',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontFeatures: const [FontFeature.tabularFigures()],
+
+              const SizedBox(height: 20),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(
+                      alpha: 0.5,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
-              ],
-              const SizedBox(height: 28),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 20,
+                          color: scheme.error,
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        Expanded(
+                          child: Text(
+                            service.errorMessage ??
+                                'An unexpected initialization '
+                                    'error occurred.',
+                            style: textTheme.bodySmall?.copyWith(
+                              height: 1.45,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (service.failedStep != null) ...[
+                      const SizedBox(height: 14),
+
+                      Divider(
+                        height: 1,
+                        color: scheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Text(
+                            'Failed during',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+
+                          const Spacer(),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.errorContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              service.failedStep!.label,
+                              style: textTheme.labelSmall?.copyWith(
+                                color: scheme.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 26),
+
               FilledButton.icon(
                 onPressed: service.retry,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Try again'),
+                icon: const Icon(
+                  Icons.refresh_rounded,
+                  size: 19,
+                ),
+                label: const Text(
+                  'Try again',
+                ),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size(160, 48),
+                  minimumSize: const Size(
+                    double.infinity,
+                    52,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
+
               const SizedBox(height: 12),
+
               Text(
-                'You can also close and reopen the app.',
+                'If the problem continues, close and reopen the app.',
                 style: textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -602,10 +1075,15 @@ class _FailureView extends StatelessWidget {
   }
 }
 
-/// App logo. Uses `assets/logo.png` when present; otherwise falls back to a
-/// programmatic bus-in-ring mark.
+/// App logo.
+///
+/// Uses `assets/logo.png` when available, otherwise falls back to
+/// the built-in RapidTransit KL brand mark.
 class SplashLogo extends StatelessWidget {
-  const SplashLogo({super.key, this.size = 128});
+  const SplashLogo({
+    super.key,
+    this.size = 128,
+  });
 
   final double size;
 
@@ -616,20 +1094,27 @@ class SplashLogo extends StatelessWidget {
       width: size,
       height: size,
       fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => _BrandMark(size: size),
+      errorBuilder: (_, __, ___) {
+        return _BrandMark(
+          size: size,
+        );
+      },
     );
   }
 }
 
-/// Drawn fallback logo: a ring around a bus icon.
+/// Fallback logo shown when assets/logo.png cannot be loaded.
 class _BrandMark extends StatelessWidget {
-  const _BrandMark({this.size = 128});
+  const _BrandMark({
+    this.size = 128,
+  });
 
   final double size;
 
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+
     return SizedBox(
       width: size,
       height: size,
@@ -641,19 +1126,24 @@ class _BrandMark extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: primary, width: size * 0.04),
+              border: Border.all(
+                color: primary,
+                width: size * 0.04,
+              ),
             ),
           ),
+
           Icon(
             Icons.directions_bus_rounded,
             size: size * 0.45,
             color: primary,
           ),
+
           Positioned(
             top: size * 0.02,
             child: Icon(
               Icons.location_on_rounded,
-              size: size * 0.3,
+              size: size * 0.30,
               color: AppColors.red,
             ),
           ),

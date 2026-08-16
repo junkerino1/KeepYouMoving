@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../controllers/route_controller.dart';
 import '../models/eta_departure.dart';
 import '../models/route_stop.dart';
 import '../models/transit_route.dart';
+import '../services/app_location_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/map/live_bus_marker.dart';
@@ -145,29 +145,17 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     });
   }
 
-  /// Fetches the user's real GPS position (like the live map) so their marker
-  /// can be shown when they are near this stop.
+  /// Fetches the user's real GPS position via the shared location service
+  /// (permission already granted by the live map screen).
   Future<void> _fetchUserLocation() async {
     if (_isFetchingUserLocation) return;
     _isFetchingUserLocation = true;
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      final pos = await AppLocationService.instance.getInitialLatLng();
       if (!mounted) return;
-      setState(() {
-        _userPosition = LatLng(position.latitude, position.longitude);
-      });
+      if (pos != null) {
+        setState(() => _userPosition = pos);
+      }
     } catch (_) {
       // Not shown — the user marker is simply omitted.
     } finally {
