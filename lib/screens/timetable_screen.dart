@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/timetable_controller.dart';
+import '../models/route_stop.dart';
+import '../models/transit_route.dart';
 import '../theme/app_theme.dart';
 import '../widgets/stops/route_color_badge.dart';
+import 'stop_detail_screen.dart';
 
 /// One selectable entry in the searchable route/stop picker.
 class _SearchOption {
@@ -45,6 +48,17 @@ class TimetableScreen extends StatefulWidget {
 class _TimetableScreenState extends State<TimetableScreen> {
   final TimetableController _controller = TimetableController();
 
+  /// Drives the timetable list so it can auto-scroll to the next departure.
+  final ScrollController _scrollController = ScrollController();
+
+  /// Fixed row height for the timetable list; keeps the auto-scroll offset
+  /// math (next index × row extent) exact.
+  static const double _rowExtent = 56;
+
+  /// Key of the schedule (serviceDate + stop) we last auto-scrolled for, so
+  /// the scroll transition runs once per freshly-loaded timetable.
+  String? _lastAutoScrolledKey;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +72,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -217,6 +232,59 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return 'Select a route and stop to view its timetable.';
   }
 
+  /// Meaningful label for the next departure: includes the live countdown when
+  /// the schedule is for today, otherwise a plain "next departure".
+  String _nextDepartureLabel(int? minutesUntil) {
+    if (minutesUntil == null) return 'Next departure';
+    if (minutesUntil <= 0) return 'Next departure · now';
+    return 'Next departure · $minutesUntil min';
+  }
+
+  /// Opens the stop-detail screen for the selected stop/route, mirroring the
+  /// live map's stop-detail navigation.
+  void _openStopDetail() {
+    final provider = _controller.selectedProvider;
+    final stopId = _controller.selectedStopId;
+    final routeId = _controller.selectedRouteId;
+    if (provider == null || stopId == null || routeId == null) return;
+
+    RouteStop? stop;
+    for (final s in _controller.stops) {
+      if (s.stopId == stopId) {
+        stop = s;
+        break;
+      }
+    }
+    if (stop == null) return;
+    // Local final so the non-null type is preserved inside the route builder
+    // closure below (type promotion doesn't carry into closures).
+    final selectedStop = stop;
+
+    TransitRoute? route;
+    for (final r in _controller.routes) {
+      if (r.routeId == routeId) {
+        route = r;
+        break;
+      }
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StopDetailScreen(
+          stopName: selectedStop.stopName,
+          stopLine:
+              route?.routeShortName ?? _controller.currentRouteLabel ?? '',
+          latitude: selectedStop.stopLat,
+          longitude: selectedStop.stopLon,
+          stopId: selectedStop.stopId,
+          providerId: provider.id,
+          providerKey: provider.providerKey,
+          route: route,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTimes() {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -265,10 +333,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
     // Highlight "next" and "departed" only when the schedule is for today.
     int? nextIndex;
+    final nowMinutes = DateTime.now().hour * 60 + DateTime.now().minute;
     final isToday = _isScheduleToday(schedule.serviceDate);
     if (isToday) {
-      final nowMinutes =
-          DateTime.now().hour * 60 + DateTime.now().minute;
       for (var i = 0; i < times.length; i++) {
         if (_minutesOfDay(times[i]) >= nowMinutes) {
           nextIndex = i;
@@ -277,70 +344,106 @@ class _TimetableScreenState extends State<TimetableScreen> {
       }
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    // Auto-scroll once from the top to the next departure (only when it's not
+    // already the first row), keyed per schedule+stop so a freshly loaded
+    // timetable re-runs the transition.
+    final scrollKey = '${schedule.serviceDate}|${schedule.stopId}';
+    if (isToday &&
+        nextIndex != null &&
+        nextIndex > 0 &&
+        scrollKey != _lastAutoScrolledKey) {
+      _lastAutoScrolledKey = scrollKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        // Center the upcoming departure in the viewport so departed rows stay
+        // visible above it and future rows below — the upcoming is the focus.
+        final upcomingOffset = nextIndex! * _rowExtent;
+        final target = (upcomingOffset -
+                (_scrollController.position.viewportDimension / 2) +
+                (_rowExtent / 2))
+            .clamp(0.0, _scrollController.position.maxScrollExtent)
+            .toDouble();
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeOutCubic,
+        );
+      });
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      itemExtent: _rowExtent,
       itemCount: times.length,
-      separatorBuilder: (context, index) =>
-          const Divider(height: 1, indent: 72),
       itemBuilder: (context, index) {
         final isNext = index == nextIndex;
-        final isPast = isToday &&
-            nextIndex != null &&
-            index < nextIndex;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          color: isNext ? scheme.surfaceContainerLow : Colors.transparent,
-          child: Row(
-            children: [
-              // Time dot indicator
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isNext
-                      ? scheme.primary
-                      : isPast
-                          ? scheme.outlineVariant
-                          : scheme.outline,
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Time — monospace numerals for scannability; size varies for
-              // hierarchy (next larger, past smaller). Type-scale exception.
-              Text(
-                _formatTime(times[index]),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
-                  fontSize: isNext ? 18 : isPast ? 13 : 15,
-                  color: isNext
-                      ? scheme.onSurface
-                      : scheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              // Status badge
-              if (isNext)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
-                    borderRadius: BorderRadius.circular(8),
+        final isPast = isToday && nextIndex != null && index < nextIndex;
+        final minutesUntil =
+            isToday ? _minutesOfDay(times[index]) - nowMinutes : null;
+        return Material(
+          color: isNext
+              ? scheme.primaryContainer.withValues(alpha: 0.4)
+              : Colors.transparent,
+          child: InkWell(
+            onTap: isNext ? _openStopDetail : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: scheme.outlineVariant.withValues(alpha: 0.5),
                   ),
-                  child: Text(
-                    'Next',
-                    style: textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onPrimary,
-                      letterSpacing: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Status dot
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isNext
+                          ? scheme.primary
+                          : isPast
+                              ? scheme.outlineVariant
+                              : scheme.outline,
                     ),
                   ),
-                )
-              else if (isPast)
-                Text('Departed', style: textTheme.labelMedium),
-            ],
+                  const SizedBox(width: 16),
+                  // Time — one uniform theme font for every row (same type
+                  // family); the upcoming departure is scaled up and coloured
+                  // primary so it's the obvious focal point, while departed
+                  // times are deliberately much lighter.
+                  Text(
+                    _formatTime(times[index]),
+                    style: (isNext
+                            ? textTheme.titleLarge
+                            : textTheme.titleMedium)
+                        ?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: isNext
+                          ? scheme.primary
+                          : isPast
+                              ? scheme.outline
+                              : scheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isNext)
+                    _NextBadge(
+                      label: _nextDepartureLabel(minutesUntil),
+                      onTap: _openStopDetail,
+                    )
+                  else if (isPast)
+                    Text(
+                      'Departed',
+                      style: textTheme.labelMedium
+                          ?.copyWith(color: scheme.outlineVariant),
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -697,5 +800,47 @@ class _TimetableScreenState extends State<TimetableScreen> {
         '${now.month.toString().padLeft(2, '0')}'
         '${now.day.toString().padLeft(2, '0')}';
     return serviceDate == today;
+  }
+}
+
+/// Primary pill for the next departure; tapping it opens the stop-detail
+/// screen for the selected stop/route.
+class _NextBadge extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _NextBadge({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: scheme.primary,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onPrimary,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded,
+                  size: 14, color: scheme.onPrimary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -69,6 +69,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   double _bottomSheetHeight = kSheetDefaultHeight;
   Stop? _tappedStop;
 
+  /// Live GPS stream subscription; updates [_currentPosition] as the user moves.
+  StreamSubscription<Position>? _positionSub;
+
+  /// Where nearest stops were last fetched from; used to throttle re-fetches
+  /// while the location stream emits frequent updates.
+  LatLng? _lastStopsRefreshOrigin;
+
   /// Honest, human-readable reason the location couldn't be resolved. Shown
   /// as a status chip instead of a fabricated "you are here" marker.
   String? _locationMessage;
@@ -94,6 +101,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   void dispose() {
+    _positionSub?.cancel();
     _stopController.dispose();
     super.dispose();
   }
@@ -159,10 +167,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
   }
 
-  /// Fetches the user's live GPS position and centers the map on it.
+  /// Requests location permission, then starts streaming the user's live
+  /// position so the marker follows the device.
   ///
-  /// On failure sets [_locationMessage] so the UI shows an honest
-  /// location-unavailable state instead of a fabricated marker.
+  /// On permission/service failure sets [_locationMessage] so the UI shows an
+  /// honest location-unavailable state instead of a fabricated marker.
   Future<void> _fetchCurrentLocation() async {
     if (_isLocating) return;
     setState(() {
@@ -205,19 +214,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      if (!mounted) return;
-
-      final latLng = LatLng(position.latitude, position.longitude);
-      setState(() {
-        _currentPosition = latLng;
-        _isLocating = false;
-        _locationMessage = null;
-      });
-      _centerOn(latLng);
-      _refreshStops();
+      await _startPositionStream();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -226,6 +223,62 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         });
       }
     }
+  }
+
+  /// Subscribes to the live GPS stream so the user marker follows the device.
+  ///
+  /// The first fix centers the map and refreshes nearby stops; later updates
+  /// only move the marker (the map is not re-centered while you pan). Nearby
+  /// stops refresh again once the user has moved a meaningful distance.
+  Future<void> _startPositionStream() async {
+    await _positionSub?.cancel();
+    const settings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      // 0 = emit every update (no distance filter).
+      distanceFilter: 0,
+    );
+    _positionSub = Geolocator.getPositionStream(locationSettings: settings)
+        .listen(
+      (position) {
+        if (!mounted) return;
+        final latLng = LatLng(position.latitude, position.longitude);
+        final isFirstFix = _currentPosition == null;
+        setState(() {
+          _currentPosition = latLng;
+          _isLocating = false;
+          _locationMessage = null;
+        });
+        if (isFirstFix) _centerOn(latLng);
+        _refreshStopsIfMoved(latLng, force: isFirstFix);
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _isLocating = false;
+          // Keep any last-known position; only surface an error when we never
+          // got a fix at all.
+          if (_currentPosition == null) {
+            _locationMessage = 'Could not determine your location';
+          }
+        });
+      },
+    );
+  }
+
+  /// Refreshes the nearest stops only when the user has moved at least
+  /// [minRefreshDistanceM] from the last refresh, or when [force] is set
+  /// (first fix / provider change).
+  void _refreshStopsIfMoved(LatLng origin, {required bool force}) {
+    const minRefreshDistanceM = 150;
+    final last = _lastStopsRefreshOrigin;
+    if (!force &&
+        last != null &&
+        const Distance().as(LengthUnit.Meter, last, origin) <
+            minRefreshDistanceM) {
+      return;
+    }
+    _lastStopsRefreshOrigin = origin;
+    _refreshStops();
   }
 
   /// Re-centers the map on the user's current position (fetching it if needed).
@@ -241,20 +294,39 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   /// Centers the camera so the location marker sits near the top of the map
   /// (~25% from the top) instead of dead-center, keeping it clear of the
   /// bottom sheet that covers the lower part of the screen.
+  ///
+  /// The zoom is reset to the default level, and rotation is snapped back to
+  /// north — only the center follows [point].
   void _centerOn(LatLng point) {
     try {
       final camera = _mapController.camera;
+      // Reset to the default zoom level.
+      const zoom = _defaultZoom;
+      // Snap rotation to north first (rotate-only: never touches zoom/center)
+      // so the offset math below runs in a north-up frame and the marker ends
+      // up exactly where intended.
+      if (camera.rotation != 0) _mapController.rotate(0);
+
       final height = camera.nonRotatedSize.y;
       // A negative vertical offset shifts the point UP the screen. Fall back
       // to the screen height when the map isn't laid out yet (size is 0).
       final mapHeight = height > 0 ? height : MediaQuery.sizeOf(context).height;
       _mapController.move(
         point,
-        camera.zoom,
+        zoom,
         offset: Offset(0, -(mapHeight * 0.25)),
       );
     } catch (_) {
       _mapController.move(point, _defaultZoom);
+    }
+  }
+
+  /// Resets the map rotation so north is up, keeping the current center/zoom.
+  void _resetNorth() {
+    try {
+      _mapController.rotate(0);
+    } catch (_) {
+      // The map may not be laid out yet; nothing to reset.
     }
   }
 
@@ -383,26 +455,42 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
               markerLayers: markerLayers,
             ),
-            // Center-on-location button
+            // Map controls: reset-north + center-on-location buttons
             Positioned(
               right: 12,
               bottom: _bottomSheetHeight + 16,
-              child: FloatingActionButton.small(
-                heroTag: 'locateMe',
-                backgroundColor: AppColors.white,
-                foregroundColor: AppColors.navy,
-                elevation: 2,
-                onPressed: _centerOnCurrent,
-                child: _isLocating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.navy,
-                        ),
-                      )
-                    : const Icon(Icons.my_location_rounded),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'resetNorth',
+                    backgroundColor: AppColors.white,
+                    foregroundColor: AppColors.navy,
+                    elevation: 2,
+                    tooltip: 'Reset north',
+                    onPressed: _resetNorth,
+                    child: const Icon(Icons.explore_rounded),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.small(
+                    heroTag: 'locateMe',
+                    backgroundColor: AppColors.white,
+                    foregroundColor: AppColors.navy,
+                    elevation: 2,
+                    tooltip: 'Center on my location',
+                    onPressed: _centerOnCurrent,
+                    child: _isLocating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.navy,
+                            ),
+                          )
+                        : const Icon(Icons.my_location_rounded),
+                  ),
+                ],
               ),
             ),
             // Nearest-stops fetch status

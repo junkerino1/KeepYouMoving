@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/eta_departure.dart';
+import '../models/route_live_vehicle.dart';
 import '../models/route_stop.dart';
 import '../services/api_service.dart';
 import '../utils/api_envelope.dart';
@@ -33,6 +34,11 @@ class RouteController extends ChangeNotifier {
   String? _etaError;
   DateTime? _lastEtaFetchedAt;
 
+  // Live buses for the whole route (dedicated live-location endpoint).
+  List<RouteLiveVehicle> _routeVehicles = [];
+  bool _isLoadingRouteVehicles = false;
+  String? _routeVehiclesError;
+
   List<RouteStop> get stops => List.unmodifiable(_stops);
   bool get isLoadingStops => _isLoadingStops;
   bool get hasLoadedStops => _stopsLoaded;
@@ -56,6 +62,15 @@ class RouteController extends ChangeNotifier {
     final list = _stops.where((s) => s.directionId == dir).toList()
       ..sort((a, b) => a.stopSequence.compareTo(b.stopSequence));
     return list;
+  }
+
+  /// The direction (0 or 1) that serves [stopId], or `null` when the stop is
+  /// not part of this route's stops.
+  int? directionForStop(String stopId) {
+    for (final stop in _stops) {
+      if (stop.stopId == stopId) return stop.directionId;
+    }
+    return null;
   }
 
   String _geometryKey(int direction) => '$_routeId/$direction';
@@ -219,7 +234,9 @@ class RouteController extends ChangeNotifier {
         throw Exception('Server responded with ${response.statusCode}');
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = decoded['departures'] as List<dynamic>? ?? const [];
+      // Departures are wrapped under `data` in the ETA response envelope.
+      final payload = unwrapData(decoded);
+      final data = payload['departures'] as List<dynamic>? ?? const [];
       _departures = data
           .map((e) => EtaDeparture.fromJson(e as Map<String, dynamic>))
           .toList(growable: false);
@@ -229,6 +246,52 @@ class RouteController extends ChangeNotifier {
       _etaError = 'Could not load live departures.';
     } finally {
       _isLoadingEta = false;
+      notifyListeners();
+    }
+  }
+
+  // --- Live buses for the route (dedicated live-location endpoint) ---
+
+  List<RouteLiveVehicle> get routeVehicles => List.unmodifiable(_routeVehicles);
+  bool get isLoadingRouteVehicles => _isLoadingRouteVehicles;
+  String? get routeVehiclesError => _routeVehiclesError;
+
+  /// Live buses for the selected direction, from the route live-location
+  /// endpoint (used to plot buses on the map).
+  List<RouteLiveVehicle> get selectedDirectionRouteVehicles {
+    final dir = _selectedDirection;
+    if (dir == null) return List.unmodifiable(_routeVehicles);
+    return _routeVehicles.where((v) => v.directionId == dir).toList();
+  }
+
+  /// Fetches live bus locations for the whole route via the dedicated
+  /// live-location endpoint. Only the real-time positions are refreshed —
+  /// never cached. Safe to call repeatedly.
+  Future<void> loadRouteLiveVehicles({
+    required int providerId,
+    required String routeId,
+  }) async {
+    if (_isLoadingRouteVehicles) return;
+    _isLoadingRouteVehicles = true;
+    _routeVehiclesError = null;
+    notifyListeners();
+    try {
+      final response =
+          await _api.get('$providerId/live_location/route/$routeId');
+      if (response.statusCode != 200) {
+        throw Exception('Server responded with ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = extractItems(decoded);
+      _routeVehicles = data
+          .map((item) =>
+              RouteLiveVehicle.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false);
+    } catch (_) {
+      // Keep previous vehicles; the UI shows a non-blocking error state.
+      _routeVehiclesError = 'Could not load live buses.';
+    } finally {
+      _isLoadingRouteVehicles = false;
       notifyListeners();
     }
   }

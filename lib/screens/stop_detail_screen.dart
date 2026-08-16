@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../controllers/route_controller.dart';
 import '../models/eta_departure.dart';
@@ -12,6 +13,7 @@ import '../utils/format.dart';
 import '../widgets/map/live_bus_marker.dart';
 import '../widgets/map/live_map.dart';
 import '../widgets/map/stop_dot.dart';
+import '../widgets/map/user_location_marker.dart';
 import '../widgets/sheets/stop_detail_bottom_sheet.dart';
 import '../widgets/stops/route_color_badge.dart';
 import 'route_detail_screen.dart';
@@ -48,6 +50,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
   final RouteController _routeController = RouteController();
   Timer? _etaTimer;
 
+  /// The user's real GPS position, shown when they are near this stop
+  /// (mirrors the live map's streaming-location marker).
+  LatLng? _userPosition;
+  bool _isFetchingUserLocation = false;
+
   /// Stop whose name bubble is currently shown above its marker.
   RouteStop? _tappedStop;
 
@@ -61,11 +68,22 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
   /// Provider theme for all provider-related accents on this screen.
   ProviderTheme get _providerTheme => ProviderTheme.of(widget.providerKey);
 
+  /// Whether the entered stop's pin should be shown: yes while the stop
+  /// belongs to the currently selected direction, so inverting to a direction
+  /// that doesn't serve it hides the pin. With no route data (no direction to
+  /// consider) it's always shown.
+  bool get _showEnteredStopMarker {
+    if (!_routeController.hasLoadedStops) return true;
+    return _routeController.selectedDirectionStops
+        .any((stop) => stop.stopId == widget.stopId);
+  }
+
   @override
   void initState() {
     super.initState();
     _initRoute();
     _startEtaRefresh();
+    _fetchUserLocation();
   }
 
   @override
@@ -86,6 +104,13 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     );
     if (!mounted) return;
 
+    // Default the direction to whichever one serves the entered stop (0 or 1)
+    // so opening a stop on the inbound side doesn't show the outbound view.
+    final stopDirection = _routeController.directionForStop(widget.stopId);
+    if (stopDirection != null) {
+      _routeController.selectDirection(stopDirection);
+    }
+
     _focusOnStation();
     await _routeController.ensureGeometry(providerId: providerId);
 
@@ -93,6 +118,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
       providerId: providerId,
       routeId: routeId,
       stopId: widget.stopId,
+    );
+    // Plot live buses for the whole route on the map.
+    await _routeController.loadRouteLiveVehicles(
+      providerId: providerId,
+      routeId: routeId,
     );
   }
 
@@ -108,15 +138,71 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
         routeId: routeId,
         stopId: widget.stopId,
       );
+      _routeController.loadRouteLiveVehicles(
+        providerId: widget.providerId,
+        routeId: routeId,
+      );
     });
   }
 
-  /// Centers the map on the selected station at a fixed zoom (~14.0), keeping
-  /// the same look as the live map instead of fitting the whole route.
+  /// Fetches the user's real GPS position (like the live map) so their marker
+  /// can be shown when they are near this stop.
+  Future<void> _fetchUserLocation() async {
+    if (_isFetchingUserLocation) return;
+    _isFetchingUserLocation = true;
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      if (!mounted) return;
+      setState(() {
+        _userPosition = LatLng(position.latitude, position.longitude);
+      });
+    } catch (_) {
+      // Not shown — the user marker is simply omitted.
+    } finally {
+      _isFetchingUserLocation = false;
+    }
+  }
+
+  /// Whether [position] is close enough to this stop to show the user marker.
+  bool _isNearStop(LatLng position) {
+    const thresholdM = 1000;
+    final distance = const Distance().as(
+      LengthUnit.Meter,
+      position,
+      LatLng(widget.latitude, widget.longitude),
+    );
+    return distance <= thresholdM;
+  }
+
+  /// Centers the map on the selected station so it sits near the top of the
+  /// screen (~30% from the top) instead of dead-center, keeping it clear of
+  /// the draggable bottom sheet, at the same zoom as the live map.
   void _focusOnStation() {
     final target = LatLng(widget.latitude, widget.longitude);
     try {
-      _mapController.move(target, 16.0);
+      final camera = _mapController.camera;
+      final height = camera.nonRotatedSize.y;
+      // A negative vertical offset shifts the point UP the screen. Fall back
+      // to the screen height when the map isn't laid out yet (size is 0).
+      final mapHeight =
+          height > 0 ? height : MediaQuery.sizeOf(context).height;
+      _mapController.move(
+        target,
+        16.0,
+        offset: Offset(0, -(mapHeight * 0.20)),
+      );
     } catch (_) {
       // The map may not be laid out yet; the initial center still applies.
     }
@@ -219,26 +305,29 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                     : <Polyline>[];
 
             final markerLayers = <MarkerLayer>[
-              // Stops for the selected direction, or the single tapped stop
-              // when no route data is available.
+              // Stops for the selected direction (excluding the entered stop,
+              // which is drawn as a pinpoint below).
               if (_routeController.hasLoadedStops &&
                   _routeController.selectedDirectionStops.isNotEmpty)
                 MarkerLayer(
                   markers: [
                     for (final stop in _routeController.selectedDirectionStops)
-                      Marker(
-                        point: LatLng(stop.stopLat, stop.stopLon),
-                        width: 24,
-                        height: 24,
-                        alignment: Alignment.center,
-                        child: GestureDetector(
-                          onTap: () => _onMarkerTap(stop),
-                          child: StopDot(color: _providerTheme.primary),
+                      if (stop.stopId != widget.stopId)
+                        Marker(
+                          point: LatLng(stop.stopLat, stop.stopLon),
+                          width: 24,
+                          height: 24,
+                          alignment: Alignment.center,
+                          child: GestureDetector(
+                            onTap: () => _onMarkerTap(stop),
+                            child: StopDot(color: _providerTheme.primary),
+                          ),
                         ),
-                      ),
                   ],
-                )
-              else
+                ),
+              // The entered stop's round marker + pinpoint — shown only while
+              // the stop belongs to the currently selected direction.
+              if (_showEnteredStopMarker) ...[
                 MarkerLayer(
                   markers: [
                     Marker(
@@ -246,6 +335,17 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                       width: 24,
                       height: 24,
                       alignment: Alignment.center,
+                      child: StopDot(color: _providerTheme.primary),
+                    ),
+                  ],
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(widget.latitude, widget.longitude),
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.topCenter,
                       child: GestureDetector(
                         onTap: () => _onMarkerTap(RouteStop(
                           stopId: widget.stopId,
@@ -253,29 +353,48 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           stopLat: widget.latitude,
                           stopLon: widget.longitude,
                         )),
-                        child: StopDot(color: _providerTheme.primary),
+                        child: _StopPin(theme: _providerTheme),
                       ),
                     ),
                   ],
                 ),
-              // Live buses on the selected route/direction (tap shows plate+speed)
-              if (_routeController.liveVehicleInfo.isNotEmpty)
+              ],
+              // The user's real location, only when they are near this stop
+              // (mirrors the live map's streaming-location marker).
+              if (_userPosition != null && _isNearStop(_userPosition!))
                 MarkerLayer(
                   markers: [
-                    for (final info in _routeController.liveVehicleInfo)
+                    Marker(
+                      point: _userPosition!,
+                      width: 64,
+                      height: 64,
+                      child: const UserLocationMarker(),
+                    ),
+                  ],
+                ),
+              // Live buses plotted from the route live-location endpoint,
+              // filtered to the selected direction (tap shows plate+speed).
+              if (_routeController.selectedDirectionRouteVehicles.isNotEmpty)
+                MarkerLayer(
+                  markers: [
+                    for (final bus
+                        in _routeController.selectedDirectionRouteVehicles)
                       Marker(
                         point: LatLng(
-                          info.position.latitude,
-                          info.position.longitude,
+                          bus.position.latitude,
+                          bus.position.longitude,
                         ),
                         width: 48,
                         height: 48,
                         alignment: Alignment.center,
                         child: LiveBusMarker(
                           color: _providerTheme.primary,
-                          bearing: info.position.bearing,
-                          bearingIsExplicit: info.position.bearingIsExplicit,
-                          onTap: () => _onVehicleTap(info),
+                          bearing: bus.position.bearing,
+                          bearingIsExplicit: bus.position.bearingIsExplicit,
+                          onTap: () => _onVehicleTap((
+                            position: bus.position,
+                            plate: bus.publicVehicleId,
+                          )),
                         ),
                       ),
                   ],
@@ -294,11 +413,6 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                       : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                   polylines: polylines,
                   markerLayers: markerLayers,
-                ),
-                // "You are here!" label above the selected stop
-                _YouAreHereLabel(
-                  mapController: _mapController,
-                  position: LatLng(widget.latitude, widget.longitude),
                 ),
                 // Floating Header
                 Positioned(
@@ -517,97 +631,31 @@ class _StopBubble extends StatelessWidget {
   }
 }
 
-/// "You are here!" label that stays tied to the selected stop marker while the
-/// map moves.
-class _YouAreHereLabel extends StatefulWidget {
-  final MapController mapController;
-  final LatLng position;
+/// A location-pin marker for the entered stop, whose tail points at the
+/// stop's exact location.
+class _StopPin extends StatelessWidget {
+  final ProviderTheme theme;
 
-  const _YouAreHereLabel({
-    required this.mapController,
-    required this.position,
-  });
+  const _StopPin({required this.theme});
 
-  @override
-  State<_YouAreHereLabel> createState() => _YouAreHereLabelState();
-}
-
-class _YouAreHereLabelState extends State<_YouAreHereLabel> {
-  StreamSubscription<MapEvent>? _mapSub;
-  Offset _position = Offset.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _position = _computePosition();
-    // Follow the selected stop marker as the map pans or flings.
-    _mapSub = widget.mapController.mapEventStream.listen((event) {
-      if (!mounted) return;
-      if (event is MapEventMove || event is MapEventFlingAnimation) {
-        setState(() => _position = _computePosition());
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _mapSub?.cancel();
-    super.dispose();
-  }
-
-  /// Top-left corner for the label: centered above the selected stop marker.
-  Offset _computePosition() {
-    try {
-      final point =
-          widget.mapController.camera.latLngToScreenPoint(widget.position);
-      // Above the 24px marker (half = 12) with a small gap and the label.
-      return Offset(point.x, point.y - 12 - 8 - 30);
-    } catch (_) {
-      return Offset(MediaQuery.sizeOf(context).width / 2, 60);
-    }
-  }
+  /// Material's pin glyph keeps a little empty padding below its tip, so the
+  /// icon is nudged down by this much (logical px at the rendered size) to
+  /// make the tail land exactly on the stop's location.
+  static const double _tipPadding = 4;
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: _position.dx,
-      top: _position.dy,
-      child: const FractionalTranslation(
-        translation: Offset(-0.5, 0),
-        child: _YouAreHereBubble(),
-      ),
-    );
-  }
-}
-
-/// Small white rectangle with a shadow, a red location pin and black text.
-class _YouAreHereBubble extends StatelessWidget {
-  const _YouAreHereBubble();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surface,
-      elevation: 3,
-      shadowColor: const Color(0x330F172A),
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.location_on_rounded, size: 12, color: scheme.error),
-            const SizedBox(width: 4),
-            Text(
-              'You are here!',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ],
-        ),
+    return Transform.translate(
+      offset: const Offset(0, _tipPadding),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Slightly larger white glyph behind the colored one creates a white
+          // outline around the pin.
+          const Icon(Icons.location_on_rounded,
+              size: 44, color: AppColors.white),
+          Icon(Icons.location_on_rounded, size: 34, color: theme.primary),
+        ],
       ),
     );
   }

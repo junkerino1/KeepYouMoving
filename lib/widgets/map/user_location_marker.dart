@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
-/// Pulsing location marker shown at the user's current position.
+/// Pulsing live-location marker shown at the user's current position.
 ///
-/// A soft, semi-transparent navy circle pulses outward behind a navy
-/// pinpoint icon (with a white outline) to draw the eye without cluttering
-/// the map.
+/// A soft, semi-transparent red circle pulses outward behind a solid red dot
+/// with a white border — the standard "streaming location" look.
 class UserLocationMarker extends StatefulWidget {
   const UserLocationMarker({super.key});
 
@@ -58,22 +57,15 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
               );
             },
           ),
-          // Pinpoint icon with a white outline on the pin itself: a slightly
-          // larger white glyph behind the colored one creates the stroke.
-          const Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.location_on_rounded,
-                size: 48,
-                color: AppColors.white,
-              ),
-              Icon(
-                Icons.location_on_rounded,
-                size: 36,
-                color: AppColors.red,
-              ),
-            ],
+          // Red dot with a white border (streaming-location style).
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.red,
+              border: Border.all(color: AppColors.white, width: 3),
+            ),
           ),
         ],
       ),
