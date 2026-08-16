@@ -30,18 +30,26 @@ class ETASection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    // Only show departures within the next hour.
+    final withinHour = departures
+        .where((d) => d.countdownMinutes() <= 60)
+        .toList();
+    // Departures actually rendered (capped at 4).
+    final displayed = withinHour.take(4).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildHeader(),
+        _buildHeader(context, displayed),
         const SizedBox(height: 12),
         if (isLoading && !hasAnyDepartures)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: AppColors.navy,
+                color: scheme.primary,
               ),
             ),
           )
@@ -51,24 +59,19 @@ class ETASection extends StatelessWidget {
             child: Center(
               child: Text(
                 errorMessage!,
-                style:
-                    const TextStyle(fontSize: 12, color: AppColors.red),
+                style: textTheme.bodySmall?.copyWith(color: scheme.error),
               ),
             ),
           )
-        else if (departures.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+        else if (withinHour.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
-              child: Text(
-                'No upcoming buses',
-                style: TextStyle(
-                    fontSize: 12, color: AppColors.navyTextHint),
-              ),
+              child: Text('No upcoming buses', style: textTheme.bodySmall),
             ),
           )
         else
-          ...departures.take(4).map((departure) => Padding(
+          ...displayed.map((departure) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: EtaItem(
                   departure: departure,
@@ -80,24 +83,21 @@ class ETASection extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context, List<EtaDeparture> displayed) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    // "Live" only when at least one displayed departure is a tracked vehicle;
+    // otherwise the arrivals are timetable-based.
+    final hasLive = displayed.any((d) => d.firstValidVehicle != null);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Row(
           children: [
-            const Icon(Icons.schedule_rounded,
-                size: 14, color: AppColors.navyTextTertiary),
+            Icon(Icons.schedule_rounded,
+                size: 14, color: scheme.onSurfaceVariant),
             const SizedBox(width: 6),
-            const Text(
-              'REAL-TIME BUS COUNTDOWNS',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
-                color: AppColors.navyTextTertiary,
-              ),
-            ),
+            Text('Bus Countdown', style: textTheme.titleSmall),
           ],
         ),
         Row(
@@ -106,28 +106,21 @@ class ETASection extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: theme.light,
+                color: hasLive ? theme.light : scheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Live',
-                style: TextStyle(
-                  fontSize: 9,
+                hasLive ? 'Live' : 'Scheduled',
+                style: textTheme.labelMedium?.copyWith(
+                  color: hasLive ? theme.primary : scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
-                  color: theme.primary,
                 ),
               ),
             ),
             if (lastFetchedAt != null) ...[
               const SizedBox(width: 4),
-              Text(
-                _formatTime(lastFetchedAt!),
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.navyTextTertiary,
-                ),
-              ),
+              Text(_formatTime(lastFetchedAt!),
+                  style: textTheme.labelMedium),
             ],
           ],
         ),

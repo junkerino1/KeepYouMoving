@@ -23,8 +23,9 @@ class ProviderRepository {
 
   final String assetPath;
 
-  /// In-memory cache so the file is only read/parsed once per app run.
-  List<TransitProvider>? _cache;
+  /// Shared in-memory cache so the file is only read/parsed once per app run,
+  /// even though each screen creates its own [ProviderRepository].
+  static List<TransitProvider>? _cache;
 
   /// Loads all providers from the JSON asset (cached after the first call).
   Future<List<TransitProvider>> loadProviders() async {

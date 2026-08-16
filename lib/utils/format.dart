@@ -9,8 +9,8 @@ String formatDistance(double meters) {
   return '${(meters / 1000).toStringAsFixed(1)} km';
 }
 
-/// Converts speed in m/s to km/h formatted with one decimal (e.g. `38.9`).
-String formatSpeedKmh(double speedMps) => (speedMps * 3.6).toStringAsFixed(1);
+/// Formats a speed (already in km/h) with one decimal (e.g. `38.9`).
+String formatSpeedKmh(double speedKmh) => speedKmh.toStringAsFixed(1);
 
 /// Parses a 6-digit hex color string (e.g. `006CFF`) into a [Color], returning
 /// [fallback] for missing/invalid values.

@@ -1,29 +1,29 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
-/// Direction status + Swap Direction / Full List action buttons.
+/// "Stops List" / "Schedule" action buttons plus a slim status row.
 ///
-/// The direction toggle is only shown for bidirectional routes (when
-/// [isBidirectional] is true). Actions are reported through callbacks so all
-/// business logic stays in the controller/screen.
+/// Pure presentation: fetch state is passed in, and button actions are
+/// reported back through [onStopsList] / [onSchedule]. A `null` callback
+/// disables its button (used when there's no route context to navigate to).
 class DirectionSelector extends StatelessWidget {
   final bool isLoading;
   final bool hasLoaded;
   final String? errorMessage;
-  final int? selectedDirection;
   final int stopCount;
-  final bool isBidirectional;
-  final VoidCallback onSwapDirection;
+  final ProviderTheme theme;
+  final VoidCallback? onStopsList;
+  final VoidCallback? onSchedule;
 
   const DirectionSelector({
     super.key,
     required this.isLoading,
     required this.hasLoaded,
     required this.errorMessage,
-    required this.selectedDirection,
     required this.stopCount,
-    required this.isBidirectional,
-    required this.onSwapDirection,
+    required this.theme,
+    this.onStopsList,
+    this.onSchedule,
   });
 
   @override
@@ -32,67 +32,28 @@ class DirectionSelector extends StatelessWidget {
       children: [
         if (hasLoaded || isLoading) ...[
           const SizedBox(height: 12),
-          _buildStatus(),
+          _buildStatus(context),
         ],
         const SizedBox(height: 12),
         Row(
           children: [
-            if (isBidirectional) ...[
-              Expanded(
-                child: GestureDetector(
-                  onTap: onSwapDirection,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.navy,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Swap Direction',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.white,
-                          ),
-                        ),
-                        SizedBox(width: 4),
-                        Text('⇄',
-                            style: TextStyle(
-                                fontSize: 14, color: AppColors.white)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
             Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.navyBorder),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.list_rounded,
-                        size: 14, color: AppColors.navyTextSecondary),
-                    SizedBox(width: 4),
-                    Text(
-                      'Full List',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.navyTextSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+              child: _buildAction(
+                context,
+                label: 'Stops List',
+                icon: Icons.list_rounded,
+                primary: true,
+                onTap: onStopsList,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildAction(
+                context,
+                label: 'Schedule',
+                icon: Icons.schedule_rounded,
+                primary: false,
+                onTap: onSchedule,
               ),
             ),
           ],
@@ -101,21 +62,63 @@ class DirectionSelector extends StatelessWidget {
     );
   }
 
-  Widget _buildStatus() {
+  Widget _buildAction(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required bool primary,
+    required VoidCallback? onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final enabled = onTap != null;
+    final background = enabled
+        ? (primary ? theme.primary : scheme.surfaceContainerHigh)
+        : scheme.surfaceContainerHigh;
+    final foreground = enabled
+        ? (primary ? theme.onPrimary : scheme.onSurfaceVariant)
+        : scheme.outline;
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: foreground),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatus(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     if (isLoading) {
-      return const Row(
+      return Row(
         children: [
           SizedBox(
             width: 14,
             height: 14,
-            child:
-                CircularProgressIndicator(strokeWidth: 2, color: AppColors.navy),
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: scheme.primary),
           ),
-          SizedBox(width: 8),
-          Text(
-            'Loading route stops…',
-            style: TextStyle(fontSize: 12, color: AppColors.navyTextSecondary),
-          ),
+          const SizedBox(width: 8),
+          Text('Loading route stops…', style: textTheme.bodySmall),
         ],
       );
     }
@@ -124,13 +127,13 @@ class DirectionSelector extends StatelessWidget {
     if (error != null) {
       return Row(
         children: [
-          const Icon(Icons.error_outline_rounded,
-              size: 14, color: AppColors.red),
+          Icon(Icons.error_outline_rounded,
+              size: 14, color: scheme.error),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               error,
-              style: const TextStyle(fontSize: 12, color: AppColors.red),
+              style: textTheme.bodySmall?.copyWith(color: scheme.error),
             ),
           ),
         ],
@@ -138,15 +141,15 @@ class DirectionSelector extends StatelessWidget {
     }
 
     if (stopCount == 0) {
-      return const Row(
+      return Row(
         children: [
           Icon(Icons.info_outline_rounded,
-              size: 14, color: AppColors.navyTextHint),
-          SizedBox(width: 8),
+              size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               'No stops available for this route.',
-              style: TextStyle(fontSize: 12, color: AppColors.navyTextHint),
+              style: textTheme.bodySmall,
             ),
           ),
         ],
@@ -155,22 +158,15 @@ class DirectionSelector extends StatelessWidget {
 
     return Row(
       children: [
-        const Icon(Icons.swap_vert_rounded,
-            size: 14, color: AppColors.navyTextTertiary),
+        Icon(Icons.route_rounded,
+            size: 14, color: scheme.onSurfaceVariant),
         const SizedBox(width: 6),
-        Text(
-          'Direction $selectedDirection',
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: AppColors.navyTextPrimary,
+        Expanded(
+          child: Text(
+            '$stopCount stops in this direction',
+            style: textTheme.bodySmall,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-        const Spacer(),
-        Text(
-          '$stopCount stops',
-          style:
-              const TextStyle(fontSize: 11, color: AppColors.navyTextSecondary),
         ),
       ],
     );

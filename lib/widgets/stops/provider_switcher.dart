@@ -34,53 +34,63 @@ class ProviderSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.navyVeryLight,
+        color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.navyBorder),
       ),
       child: Row(
         children: providers.map((provider) {
           final selected = selectedProvider?.id == provider.id;
-          final theme = ProviderTheme.of(provider.providerKey);
+          final providerTheme = ProviderTheme.of(provider.providerKey);
+          final label = providerShortLabel(provider);
           return Expanded(
-            child: GestureDetector(
-              onTap: () => onSelected(provider),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: selected ? theme.primary : Colors.transparent,
+            child: Semantics(
+              button: true,
+              selected: selected,
+              label: label,
+              child: Material(
+                color:
+                    selected ? providerTheme.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+                child: InkWell(
+                  onTap: () => onSelected(provider),
                   borderRadius: BorderRadius.circular(9),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.directions_bus_rounded,
-                      size: 13,
-                      color: selected
-                          ? theme.onPrimary
-                          : AppColors.navyTextSecondary,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        providerShortLabel(provider),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.directions_bus_rounded,
+                          size: 14,
                           color: selected
-                              ? theme.onPrimary
-                              : AppColors.navyTextSecondary,
+                              ? providerTheme.onPrimary
+                              : scheme.onSurfaceVariant,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: selected
+                                      ? providerTheme.onPrimary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

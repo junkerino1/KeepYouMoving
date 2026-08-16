@@ -1,97 +1,126 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
-/// Route identity header: line badge plus origin → destination labels.
+/// From → To input panel: two labeled station rows and, for bidirectional
+/// routes, a circular swap button on the right. Single-direction routes show a
+/// compact "One way" badge instead.
 class RouteSelector extends StatelessWidget {
-  final String displayLine;
   final String originLabel;
   final String destinationLabel;
+  final ProviderTheme theme;
+  final bool isBidirectional;
+  final VoidCallback? onSwap;
 
   const RouteSelector({
     super.key,
-    required this.displayLine,
     required this.originLabel,
     required this.destinationLabel,
+    required this.theme,
+    required this.isBidirectional,
+    this.onSwap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final scheme = Theme.of(context).colorScheme;
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(16, 12, isBidirectional ? 68 : 88, 12),
           decoration: BoxDecoration(
-            color: AppColors.navy,
-            borderRadius: BorderRadius.circular(12),
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                displayLine,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                  color: AppColors.white,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(Icons.directions_bus,
-                  size: 14, color: AppColors.white),
+              _buildField(context, 'From', originLabel),
+              const SizedBox(height: 12),
+              _buildField(context, 'To', destinationLabel),
             ],
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.navyBorder),
-                  ),
-                  child: Text(
-                    originLabel,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.navyTextSecondary),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Text('→',
-                    style: TextStyle(
-                        fontSize: 11, color: AppColors.navyTextHint)),
-              ),
-              Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.navyVeryLight,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    destinationLabel,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.navyTextPrimary),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+        // Right-edge control: swap button (bidirectional) or One-way badge.
+        Positioned(
+          right: 14,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: isBidirectional
+                ? _buildSwapButton(context)
+                : _buildOneWayBadge(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSwapButton(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: theme.primary,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onSwap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: scheme.surface, width: 2.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x220F172A),
+                blurRadius: 6,
+                offset: Offset(0, 2),
               ),
             ],
           ),
+          child:
+              Icon(Icons.swap_vert_rounded, size: 22, color: theme.onPrimary),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOneWayBadge(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.route_rounded,
+              size: 12, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text('One way', style: textTheme.labelMedium),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField(BuildContext context, String label, String value) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: textTheme.labelMedium?.copyWith(letterSpacing: 0.8),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: textTheme.bodyMedium,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );

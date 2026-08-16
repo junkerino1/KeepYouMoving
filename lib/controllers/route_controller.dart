@@ -6,18 +6,15 @@ import 'package:latlong2/latlong.dart';
 import '../models/eta_departure.dart';
 import '../models/route_stop.dart';
 import '../services/api_service.dart';
-import '../services/osrm_service.dart';
+import '../utils/api_envelope.dart';
 
-/// Loads the stops of a route (grouped by direction) and the road-following
-/// geometry for each direction, caching both so direction switches never
+/// Loads the stops of a route (grouped by direction) and the GTFS shape
+/// polyline for each direction, caching both so direction switches never
 /// re-fetch data.
 class RouteController extends ChangeNotifier {
-  RouteController({ApiService? apiService, OsrmService? osrmService})
-      : _api = apiService ?? ApiService(),
-        _osrm = osrmService ?? OsrmService();
+  RouteController({ApiService? apiService}) : _api = apiService ?? ApiService();
 
   final ApiService _api;
-  final OsrmService _osrm;
 
   String _routeId = '';
   List<RouteStop> _stops = [];
@@ -97,7 +94,7 @@ class RouteController extends ChangeNotifier {
         throw Exception('Server responded with ${response.statusCode}');
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = decoded['data'] as List<dynamic>? ?? const [];
+      final data = extractItems(decoded);
       _stops = data
           .map((e) => RouteStop.fromJson(e as Map<String, dynamic>))
           .toList(growable: false);
@@ -120,9 +117,9 @@ class RouteController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ensures the road geometry for the selected direction is available,
+  /// Ensures the shape polyline for the selected direction is available,
   /// cached per route + direction. Safe to call on every direction switch.
-  Future<void> ensureGeometry() async {
+  Future<void> ensureGeometry({required int providerId}) async {
     final dir = _selectedDirection;
     if (dir == null) return;
     final key = _geometryKey(dir);
@@ -130,15 +127,35 @@ class RouteController extends ChangeNotifier {
       return;
     }
 
-    final waypoints = selectedDirectionStops
-        .map((s) => LatLng(s.stopLat, s.stopLon))
-        .toList();
-
     _geometryLoading.add(key);
     _geometryError.remove(key);
     notifyListeners();
     try {
-      final geometry = await _osrm.fetchRouteGeometry(waypoints);
+      final response = await _api.get('$providerId/$_routeId/$dir/shapes');
+      if (response.statusCode != 200) {
+        throw Exception('Server responded with ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final shapes = extractItems(decoded);
+      // Merge every returned shape, ordered by point sequence.
+      final geometry = <LatLng>[];
+      for (final shape in shapes) {
+        final shapeMap = shape as Map<String, dynamic>;
+        final rawPoints = shapeMap['points'] as List<dynamic>? ?? const [];
+        final entries = <(int, LatLng)>[];
+        for (final p in rawPoints) {
+          final m = p as Map<String, dynamic>;
+          entries.add((
+            int.parse(m['shape_pt_sequence'] as String),
+            LatLng(
+              double.parse(m['shape_pt_lat'] as String),
+              double.parse(m['shape_pt_lon'] as String),
+            ),
+          ));
+        }
+        entries.sort((a, b) => a.$1.compareTo(b.$1));
+        geometry.addAll(entries.map((e) => e.$2));
+      }
       _geometryCache[key] = geometry;
     } catch (_) {
       // Fallback: stop markers remain visible, the polyline is just omitted.
@@ -170,14 +187,16 @@ class RouteController extends ChangeNotifier {
     return list;
   }
 
-  /// Valid live vehicle positions for the selected direction.
-  List<VehiclePosition> get liveVehicles {
+  /// Valid live vehicles (position + public plate) for the selected direction.
+  List<({VehiclePosition position, String? plate})> get liveVehicleInfo {
     final dir = _selectedDirection;
-    final result = <VehiclePosition>[];
+    final result = <({VehiclePosition position, String? plate})>[];
     for (final d in _departures) {
       if (dir != null && int.tryParse(d.directionId) != dir) continue;
       final vehicle = d.firstValidVehicle;
-      if (vehicle != null) result.add(vehicle);
+      if (vehicle != null) {
+        result.add((position: vehicle, plate: d.liveVehicleId));
+      }
     }
     return result;
   }

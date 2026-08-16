@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/stop.dart';
 import '../models/transit_route.dart';
 import '../services/api_service.dart';
+import '../utils/api_envelope.dart';
 
 /// Fetches and holds the nearest bus stops for the currently selected provider.
 ///
@@ -20,8 +21,10 @@ class StopController extends ChangeNotifier {
 
   List<Stop> _stops = [];
   bool _isLoading = false;
-  bool _isFetching = false;
   String? _errorMessage;
+
+  // Bumped on every request; only the latest request may apply its result.
+  int _loadGeneration = 0;
 
   // Cache keys used to skip unnecessary repeat calls.
   int? _lastProviderId;
@@ -36,23 +39,26 @@ class StopController extends ChangeNotifier {
   List<Stop> get stops => List.unmodifiable(_stops);
   bool get isLoading => _isLoading;
   bool get hasStops => _stops.isNotEmpty;
-  String? get errorMessage => _errorMessage;
+String? get errorMessage => _errorMessage;
 
   /// Loads the nearest stops for [providerId] around [origin].
   ///
-  /// Avoids repeated calls: a request already in flight, or an identical
-  /// provider/origin that already produced results, is skipped.
+  /// A newer request (e.g. switching provider mid-fetch) supersedes any
+  /// in-flight one — only the latest request's result is applied. Identical
+  /// provider/origin that already produced results is skipped.
   Future<void> loadNearestStops({
     required int providerId,
     required LatLng origin,
   }) async {
-    if (_isFetching) return;
-
     final unchanged =
         _lastProviderId == providerId && _lastOrigin == origin && hasStops;
     if (unchanged) return;
 
-    _isFetching = true;
+    final generation = ++_loadGeneration;
+    // Drop the previous provider's stops so stale markers don't linger.
+    if (_lastProviderId != null && _lastProviderId != providerId) {
+      _stops = [];
+    }
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -65,28 +71,36 @@ class StopController extends ChangeNotifier {
           'lon': origin.longitude
         },
       );
+      if (generation != _loadGeneration) return; // superseded
 
       if (response.statusCode != 200) {
         throw Exception('Server responded with ${response.statusCode}');
       }
 
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = decoded['data'] as List<dynamic>? ?? const [];
+      final data = extractItems(decoded);
       _stops = data
           .map((item) => Stop.fromJson(item as Map<String, dynamic>))
           .toList(growable: false);
+      // Rapid KL (5) stop names can be ambiguous; append the stop code.
+      if (providerId == 5) {
+        _stops = _stops
+            .map((s) => s.withStopCodeInName())
+            .toList(growable: false);
+      }
       _lastProviderId = providerId;
       _lastOrigin = origin;
     } catch (_) {
+      if (generation != _loadGeneration) return; // superseded
       // Drop stale results from the UI when the fetch fails.
       _stops = [];
       _lastProviderId = null;
       _lastOrigin = null;
-      _errorMessage = 'Could not load nearby stops.';
     } finally {
-      _isFetching = false;
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _loadGeneration) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -150,7 +164,7 @@ class StopController extends ChangeNotifier {
         throw Exception('Server responded with ${response.statusCode}');
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = decoded['data'] as List<dynamic>? ?? const [];
+      final data = extractItems(decoded);
       final routes = data
           .map((item) => TransitRoute.fromJson(item as Map<String, dynamic>))
           .toList(growable: false);

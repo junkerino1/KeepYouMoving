@@ -1,51 +1,60 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
 
 /// Compact loading / error pill shown over the map while nearby stops load.
 class MapStatusChip extends StatelessWidget {
   final bool loading;
-  final String? error;
+  final String? message;
+  final IconData? icon;
+  final bool isError;
 
   const MapStatusChip.loading({super.key})
       : loading = true,
-        error = null;
+        message = null,
+        icon = null,
+        isError = false;
 
-  const MapStatusChip.error(String message, {super.key})
+  const MapStatusChip.error(this.message, {super.key})
       : loading = false,
-        error = message;
+        icon = Icons.error_outline_rounded,
+        isError = true;
+
+  /// Neutral informational chip (e.g. location unavailable). Muted icon
+  /// instead of the error red.
+  const MapStatusChip.info(this.message, {super.key})
+      : loading = false,
+        icon = Icons.location_off_outlined,
+        isError = false;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.white.withValues(alpha: 0.9),
+        color: scheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.navyBorder),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (loading)
-            const SizedBox(
+            SizedBox(
               width: 10,
               height: 10,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: AppColors.navy,
+                color: scheme.primary,
               ),
             )
-          else
-            const Icon(Icons.error_outline_rounded,
-                size: 12, color: AppColors.red),
+          else if (icon != null)
+            Icon(icon,
+                size: 12,
+                color: isError ? scheme.error : scheme.onSurfaceVariant),
           const SizedBox(width: 6),
           Text(
-            loading ? 'Loading stops…' : error ?? '',
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-              color: AppColors.navyTextSecondary,
-            ),
+            loading ? 'Loading stops…' : (message ?? ''),
+            style: Theme.of(context).textTheme.labelMedium,
           ),
         ],
       ),

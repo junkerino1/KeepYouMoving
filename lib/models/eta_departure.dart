@@ -17,6 +17,7 @@ class EtaDeparture {
   final DateTime scheduledAtUtc;
   final bool frequencyBased;
   final bool isApproximate;
+  final String? scheduledVehicleId;
   final LiveVehicle? liveVehicle;
 
   const EtaDeparture({
@@ -33,6 +34,7 @@ class EtaDeparture {
     required this.scheduledAtUtc,
     required this.frequencyBased,
     required this.isApproximate,
+    this.scheduledVehicleId,
     this.liveVehicle,
   });
 
@@ -52,6 +54,7 @@ class EtaDeparture {
       scheduledAtUtc: DateTime.parse(json['scheduled_at_utc'] as String),
       frequencyBased: json['frequency_based'] as bool? ?? false,
       isApproximate: json['is_approximate'] as bool? ?? false,
+      scheduledVehicleId: json['scheduled_vehicle_id'] as String?,
       liveVehicle:
           live is Map<String, dynamic> ? LiveVehicle.fromJson(live) : null,
     );
@@ -66,6 +69,9 @@ class EtaDeparture {
     }
     return null;
   }
+
+  /// Public plate number (e.g. `VAE7537`) of the tracked live vehicle.
+  String? get liveVehicleId => liveVehicle?.publicVehicleId;
 
   /// Minutes until this departure (based on its scheduled local time).
   int countdownMinutes({DateTime? now}) {
@@ -98,23 +104,38 @@ class LiveVehicle {
           .toList(growable: false),
     );
   }
+
+  /// Public plate of the first matched vehicle (e.g. `VAE7537`), if any.
+  String? get publicVehicleId {
+    for (final v in vehicles) {
+      final id = v.publicVehicleId;
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return null;
+  }
 }
 
 /// A single matched vehicle (an entry inside `live_vehicle.vehicles`).
 class LiveVehiclePosition {
   final String entityId;
   final VehiclePosition position;
+  final String? publicVehicleId;
 
   const LiveVehiclePosition({
     required this.entityId,
     required this.position,
+    this.publicVehicleId,
   });
 
   factory LiveVehiclePosition.fromJson(Map<String, dynamic> json) {
+    final vehicle = json['vehicle'];
     return LiveVehiclePosition(
       entityId: json['entity_id'] as String,
       position:
           VehiclePosition.fromJson(json['position'] as Map<String, dynamic>),
+      publicVehicleId: vehicle is Map<String, dynamic>
+          ? vehicle['public_vehicle_id'] as String?
+          : null,
     );
   }
 }
@@ -125,7 +146,9 @@ class VehiclePosition {
   final double longitude;
   final double bearing;
   final bool bearingIsExplicit;
-  final double speedMps;
+
+  /// The API reports vehicle speed in km/h (despite the `speed_mps` key name).
+  final double speedKmh;
   final bool speedIsExplicit;
   final bool positionValid;
 
@@ -134,7 +157,7 @@ class VehiclePosition {
     required this.longitude,
     required this.bearing,
     required this.bearingIsExplicit,
-    required this.speedMps,
+    required this.speedKmh,
     required this.speedIsExplicit,
     required this.positionValid,
   });
@@ -145,7 +168,7 @@ class VehiclePosition {
       longitude: (json['longitude'] as num).toDouble(),
       bearing: (json['bearing'] as num?)?.toDouble() ?? 0,
       bearingIsExplicit: json['bearing_is_explicit'] as bool? ?? false,
-      speedMps: (json['speed_mps'] as num?)?.toDouble() ?? 0,
+      speedKmh: (json['speed_mps'] as num?)?.toDouble() ?? 0,
       speedIsExplicit: json['speed_is_explicit'] as bool? ?? false,
       positionValid: json['position_valid'] as bool? ?? false,
     );

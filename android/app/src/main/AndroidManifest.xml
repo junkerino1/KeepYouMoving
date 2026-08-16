@@ -1,10 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required to reach the transit API and Cloudflare Turnstile endpoints -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Location permissions for live user tracking -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
-        android:label="my_bus_tracker"
+        android:label="Keep You Moving"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

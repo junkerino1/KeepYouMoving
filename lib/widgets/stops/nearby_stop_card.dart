@@ -3,6 +3,7 @@ import '../../models/stop.dart';
 import '../../models/transit_route.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
+import 'route_color_badge.dart';
 
 /// Nearby stop card with an expandable routes dropdown.
 ///
@@ -10,7 +11,7 @@ import '../../utils/format.dart';
 /// reveals the routes serving the stop (loading / error / empty / list states).
 class NearbyStopCard extends StatelessWidget {
   final Stop stop;
-  final Color accentColor;
+  final ProviderTheme theme;
   final bool expanded;
   final bool loadingRoutes;
   final String? routesError;
@@ -21,7 +22,7 @@ class NearbyStopCard extends StatelessWidget {
   const NearbyStopCard({
     super.key,
     required this.stop,
-    required this.accentColor,
+    required this.theme,
     required this.expanded,
     required this.loadingRoutes,
     required this.routesError,
@@ -32,19 +33,18 @@ class NearbyStopCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.navyBorder),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stop header row (unchanged appearance when collapsed)
-          GestureDetector(
+          // Stop header row
+          InkWell(
             onTap: onTap,
-            behavior: HitTestBehavior.opaque,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -52,11 +52,11 @@ class NearbyStopCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: accentColor,
+                      color: theme.primary,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.directions_bus_rounded,
-                        size: 16, color: AppColors.white),
+                    child: Icon(Icons.directions_bus_rounded,
+                        size: 16, color: theme.onPrimary),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -65,35 +65,19 @@ class NearbyStopCard extends StatelessWidget {
                       children: [
                         Text(
                           stop.stopName,
-                          style: const TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.navyTextPrimary,
-                          ),
+                          style: textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w500),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (stop.stopDesc.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            stop.stopDesc,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.navyTextSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     formatDistance(stop.distanceM),
-                    style: const TextStyle(
-                      fontSize: 12,
+                    style: textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurface,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.navyTextPrimary,
                     ),
                   ),
                 ],
@@ -106,11 +90,10 @@ class NearbyStopCard extends StatelessWidget {
               height: 1,
               indent: 12,
               endIndent: 12,
-              color: AppColors.navyBorder,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: _buildRoutesSection(),
+              child: _buildRoutesSection(context),
             ),
           ],
         ],
@@ -118,10 +101,12 @@ class NearbyStopCard extends StatelessWidget {
     );
   }
 
-  Widget _buildRoutesSection() {
+  Widget _buildRoutesSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     if (loadingRoutes) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 10),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
             SizedBox(
@@ -129,16 +114,14 @@ class NearbyStopCard extends StatelessWidget {
               height: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: AppColors.navy,
+                color: scheme.primary,
               ),
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             Text(
               'Loading routes…',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.navyTextSecondary,
-              ),
+              style: textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -151,19 +134,16 @@ class NearbyStopCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
           error,
-          style: const TextStyle(fontSize: 14, color: AppColors.red),
+          style: textTheme.bodyMedium?.copyWith(color: scheme.error),
         ),
       );
     }
 
     final routes = this.routes;
     if (routes == null || routes.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 10),
-        child: Text(
-          'No routes available',
-          style: TextStyle(fontSize: 14, color: AppColors.navyTextHint),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text('No routes available', style: textTheme.bodyMedium),
       );
     }
 
@@ -174,41 +154,40 @@ class NearbyStopCard extends StatelessWidget {
           InkWell(
             onTap: () => onRouteTap(route),
             borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Row(
                         children: [
-                          TextSpan(
-                            text: route.routeShortName,
-                            style: const TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.navyTextPrimary,
-                            ),
+                          RouteColorBadge(
+                            shortName: route.routeShortName,
+                            theme: theme,
+                            fontSize: 12,
+                            iconSize: 12,
                           ),
-                          TextSpan(
-                            text: '  ${route.routeLongName}',
-                            style: const TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 14,
-                              color: AppColors.navyTextSecondary,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              route.routeLongName,
+                              style: textTheme.bodyMedium
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.chevron_right_rounded,
-                      size: 20, color: AppColors.navyTextHint),
-                ],
+                    const SizedBox(width: 10),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 20, color: scheme.onSurfaceVariant),
+                  ],
+                ),
               ),
             ),
           ),

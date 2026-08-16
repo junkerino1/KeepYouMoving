@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../models/transit_provider.dart';
 import '../models/transit_route.dart';
-import '../services/api_service.dart';
 import '../services/provider_repository.dart';
+import '../services/route_list_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/stops/route_card.dart';
 import 'route_detail_screen.dart';
@@ -13,15 +11,20 @@ import 'route_detail_screen.dart';
 // --- Routes Screen ---
 
 class RoutesScreen extends StatefulWidget {
-  const RoutesScreen({super.key});
+  /// Optional external search query pushed from elsewhere (e.g. the global
+  /// search on the map). When set, this screen switches to it and keeps using
+  /// its existing filter logic.
+  final ValueNotifier<String>? externalQuery;
+
+  const RoutesScreen({super.key, this.externalQuery});
 
   @override
   State<RoutesScreen> createState() => _RoutesScreenState();
 }
 
 class _RoutesScreenState extends State<RoutesScreen> {
-  final ApiService _api = ApiService();
   final ProviderRepository _providerRepository = ProviderRepository();
+  final TextEditingController _searchController = TextEditingController();
 
   // Provider selection (dev phase: Rapid KL & MRT Feeder). Rapid KL default.
   List<TransitProvider> _providers = [];
@@ -37,7 +40,22 @@ class _RoutesScreenState extends State<RoutesScreen> {
   @override
   void initState() {
     super.initState();
+    widget.externalQuery?.addListener(_onExternalQuery);
     _init();
+  }
+
+  @override
+  void dispose() {
+    widget.externalQuery?.removeListener(_onExternalQuery);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Applies an externally-supplied search query (keeps the existing filter).
+  void _onExternalQuery() {
+    final q = widget.externalQuery?.value ?? '';
+    if (_searchController.text != q) _searchController.text = q;
+    if (mounted) setState(() => _searchQuery = q);
   }
 
   /// Resolves the dev providers from the bundled metadata (Rapid KL default).
@@ -118,22 +136,16 @@ class _RoutesScreenState extends State<RoutesScreen> {
       _errorMessage = null;
     });
     try {
-      final response = await _api.get('${provider.id}/routes');
-      if (response.statusCode != 200) {
-        throw Exception('Server responded with ${response.statusCode}');
-      }
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final data = decoded['data'] as List<dynamic>? ?? const [];
-      final routes = data
-          .map((item) => TransitRoute.fromJson(item as Map<String, dynamic>))
-          .toList(growable: false);
-      if (!mounted) return;
+      final routes = await RouteListCache.instance.routesFor(provider.id);
+      // Ignore a stale response if the provider changed mid-fetch.
+      if (!mounted || _selectedProvider?.id != provider.id) return;
       setState(() {
         _routes = routes;
         _isLoading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      // Ignore a stale failure if the provider changed mid-fetch.
+      if (!mounted || _selectedProvider?.id != provider.id) return;
       setState(() {
         _routes = [];
         _isLoading = false;
@@ -172,7 +184,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
       children: [
         _buildHeader(),
         _buildControls(),
-        const Divider(height: 1, color: AppColors.navyBorder),
+        const Divider(height: 1),
         Expanded(child: _buildContent()),
       ],
     );
@@ -182,12 +194,12 @@ class _RoutesScreenState extends State<RoutesScreen> {
   /// present regardless of the API state; only [_buildContent] changes.
   Widget _buildControls() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildProviderFilters(),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _buildSearchBar(),
         ],
       ),
@@ -197,17 +209,19 @@ class _RoutesScreenState extends State<RoutesScreen> {
   /// Route content area; reacts to the API state (loading / error / empty /
   /// list). The header, provider toggle and search bar stay visible above.
   Widget _buildContent() {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     if (_isLoading && _routes.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(strokeWidth: 2, color: AppColors.navy),
-            SizedBox(height: 12),
+            CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
+            const SizedBox(height: 12),
             Text(
               'Loading routes...',
-              style:
-                  TextStyle(fontSize: 13, color: AppColors.navyTextSecondary),
+              style: textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -217,10 +231,11 @@ class _RoutesScreenState extends State<RoutesScreen> {
       return _buildErrorState();
     }
     if (_routes.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No routes available',
-          style: TextStyle(fontSize: 14, color: AppColors.navyTextHint),
+          style: textTheme.bodyMedium
+              ?.copyWith(color: scheme.onSurfaceVariant),
         ),
       );
     }
@@ -228,27 +243,28 @@ class _RoutesScreenState extends State<RoutesScreen> {
   }
 
   Widget _buildErrorState() {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                size: 28, color: AppColors.red),
+            Icon(Icons.error_outline_rounded, size: 28, color: scheme.error),
             const SizedBox(height: 8),
             Text(
               _errorMessage!,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.navyTextSecondary),
+              style: textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
             ElevatedButton(
               onPressed: _loadRoutes,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.navy,
-                foregroundColor: AppColors.white,
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
               ),
               child: const Text('Retry'),
             ),
@@ -259,35 +275,18 @@ class _RoutesScreenState extends State<RoutesScreen> {
   }
 
   Widget _buildHeader() {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        border: Border(bottom: BorderSide(color: AppColors.navyBorder)),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'ROUTES',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1,
-              color: AppColors.navyTextTertiary,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            'All Lines',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.navyTextPrimary,
-            ),
-          ),
+          Text('All Lines', style: textTheme.titleMedium),
         ],
       ),
     );
@@ -296,92 +295,66 @@ class _RoutesScreenState extends State<RoutesScreen> {
   // --- Route List View ---
 
   Widget _buildRouteList() {
-    // No matches: show the empty state filling the whole content area
-    // (full width + height), outside the scroll view so it can expand.
+    // No matches: show the empty state filling the whole content area.
     if (_filteredRoutes.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(16),
         child: _buildEmptySearch(),
       );
     }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // List info
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_filteredRoutes.length} Routes',
-                  style: const TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                    color: AppColors.navyTextTertiary,
-                  ),
-                ),
-                const Text(
-                  'Tap to expand',
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 9,
-                    color: AppColors.navyTextHint,
-                  ),
-                ),
-              ],
-            ),
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            '${_filteredRoutes.length} Routes',
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: 4),
-          // Route Cards (API data: badge colors + route_long_name)
-          ..._filteredRoutes.map((route) {
-            final providerKey = _selectedProvider?.providerKey;
-            return RouteCard(
-              route: route,
-              fallbackBadgeColor: ProviderTheme.of(providerKey).primary,
-              onTap: () => _openRouteDetail(route),
-            );
-          }),
-        ],
-      ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            itemCount: _filteredRoutes.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final route = _filteredRoutes[index];
+              return RouteCard(
+                route: route,
+                theme: ProviderTheme.of(_selectedProvider?.providerKey),
+                onTap: () => _openRouteDetail(route),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.navyVeryLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.navyBorder),
-      ),
-      child: TextField(
-        onChanged: (v) => setState(() => _searchQuery = v),
-        style: const TextStyle(fontSize: 13, color: AppColors.navyTextPrimary),
-        decoration: InputDecoration(
-          hintText: 'Search bus line or station',
-          hintStyle: const TextStyle(color: AppColors.navyTextHint),
-          prefixIcon: const Icon(Icons.search_rounded,
-              size: 18, color: AppColors.navyTextHint),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? GestureDetector(
-                  onTap: () => setState(() => _searchQuery = ''),
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Text('Clear',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.navyTextSecondary)),
-                  ),
-                )
-              : null,
-          border: InputBorder.none,
-          filled: false,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    return TextField(
+      controller: _searchController,
+      onChanged: (v) => setState(() => _searchQuery = v),
+      decoration: InputDecoration(
+        hintText: 'Search bus line or station',
+        prefixIcon: Icon(Icons.search_rounded,
+            size: 20, color: scheme.onSurfaceVariant),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                icon: Icon(Icons.close_rounded,
+                    size: 20, color: scheme.onSurfaceVariant),
+              )
+            : null,
       ),
     );
   }
@@ -423,70 +396,66 @@ class _RoutesScreenState extends State<RoutesScreen> {
     required Color dotColor,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? selectedColor : AppColors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? selectedColor : AppColors.navyBorder,
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: isSelected ? selectedColor : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected
+                      ? Colors.white
+                      : dotColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? Colors.white
+                          : scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? AppColors.white : dotColor,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-                color:
-                    isSelected ? AppColors.white : AppColors.navyTextSecondary,
-              ),
-            ),
-          ],
         ),
       ),
     );
   }
 
   Widget _buildEmptySearch() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.navyBorder),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.help_outline_rounded,
-              size: 24, color: AppColors.navyTextHint),
+              size: 28, color: scheme.onSurfaceVariant),
           const SizedBox(height: 8),
           Text(
             _searchQuery.isEmpty
                 ? 'No routes found'
                 : 'No routes match "$_searchQuery"',
-            style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: AppColors.navyTextPrimary),
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),

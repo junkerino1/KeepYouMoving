@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# AI coding tools
+.agents/
+.gemini/
+
 # Symbolication related
 app.*.symbols
 

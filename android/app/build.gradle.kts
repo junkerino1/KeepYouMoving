@@ -19,6 +19,7 @@ android {
         applicationId = "com.example.my_bus_tracker"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // minSdk 23 is required by flutter_secure_storage (encrypted PoW token).
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

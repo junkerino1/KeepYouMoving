@@ -3,8 +3,8 @@ import '../controllers/route_controller.dart';
 import '../models/route_stop.dart';
 import '../models/transit_route.dart';
 import '../theme/app_theme.dart';
-import '../widgets/stops/provider_switcher.dart' show providerShortLabelForKey;
 import '../widgets/stops/route_color_badge.dart';
+import 'stop_detail_screen.dart';
 
 /// Detail view for a route: identity header (colored badge + long name) and a
 /// stop timeline. Opened from [RoutesScreen]; receives the API route object.
@@ -74,53 +74,50 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      backgroundColor: AppColors.white,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
+        toolbarHeight: 72,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded,
-              size: 20, color: AppColors.navyTextTertiary),
+          icon: Icon(Icons.arrow_back_rounded,
+              size: 22, color: scheme.onSurfaceVariant),
           onPressed: () => Navigator.of(context).pop(),
         ),
         titleSpacing: 0,
-        title: Row(
-          children: [
-            RouteColorBadge(route: widget.route),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.route.routeLongName,
-                style: const TextStyle(
-                  fontFamily: 'Roboto',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.navyTextPrimary,
-                ),
-                overflow: TextOverflow.ellipsis,
+        title: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 8, 16, 8),
+          child: Row(
+            children: [
+              RouteColorBadge(
+                shortName: widget.route.routeShortName,
+                theme: ProviderTheme.of(widget.providerKey),
+                fontSize: 16,
+                iconSize: 18,
               ),
-            ),
-            if (widget.providerKey != null) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.navyVeryLight,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  providerShortLabelForKey(widget.providerKey!),
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.navyTextSecondary,
+              const SizedBox(width: 12),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.route.routeLongName,
+                    maxLines: 1,
+                    style: textTheme.titleLarge,
                   ),
                 ),
               ),
             ],
-          ],
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
         ),
       ),
       body: ListenableBuilder(
@@ -128,16 +125,13 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
         builder: (context, _) {
           // No provider context (e.g. a route without a provider id).
           if (widget.providerId == null || _displayStops.isEmpty) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(10),
-              child: _buildEmptyStops(),
-            );
+            return _buildEmptyStops();
           }
           if (_routeController.isLoadingStops &&
               _routeController.stops.isEmpty) {
-            return const Center(
+            return Center(
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.navy),
+                  strokeWidth: 2, color: scheme.primary),
             );
           }
           if (_routeController.stopsError != null &&
@@ -174,70 +168,47 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   }
 
   Widget _buildDirectionRow() {
-    final stops = _displayStops;
-    final origin = stops.isNotEmpty ? stops.first.stopName : '';
-    final destination = stops.isNotEmpty ? stops.last.stopName : '';
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        if (_routeController.isBidirectional)
-          GestureDetector(
-            onTap: _onDirectionToggle,
-            child: const Row(
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    if (_routeController.isBidirectional) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: InkWell(
+          onTap: _onDirectionToggle,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.swap_horiz_rounded,
-                    size: 14, color: AppColors.navyTextHint),
-                SizedBox(width: 4),
-                Text(
-                  'Change Direction',
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.navyTextSecondary,
-                  ),
-                ),
+                    size: 14, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text('Change Direction', style: textTheme.labelMedium),
               ],
             ),
-          )
-        else
-          const Text(
-            'One direction',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: AppColors.navyTextHint,
-            ),
-          ),
-        Flexible(
-          child: Text(
-            origin.isEmpty
-                ? widget.route.routeLongName
-                : '$origin ⇄ $destination',
-            style: const TextStyle(
-                fontSize: 11, color: AppColors.navyTextSecondary),
-            overflow: TextOverflow.ellipsis,
           ),
         ),
-      ],
-    );
+      );
+    }
+    return Text('One direction', style: textTheme.labelMedium);
   }
 
   Widget _buildErrorState() {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                size: 28, color: AppColors.red),
+            Icon(Icons.error_outline_rounded, size: 28, color: scheme.error),
             const SizedBox(height: 8),
             Text(
               _routeController.stopsError ?? 'Could not load route stops.',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.navyTextSecondary),
+              style: textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
@@ -252,8 +223,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.navy,
-                foregroundColor: AppColors.white,
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
               ),
               child: const Text('Retry'),
             ),
@@ -264,22 +235,25 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   }
 
   Widget _buildEmptyStops() {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Container(
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.navyBorder),
+        color: scheme.surfaceContainerLow,
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.route_rounded,
-              size: 24, color: AppColors.navyTextHint),
+          Icon(Icons.route_rounded, size: 28, color: scheme.onSurfaceVariant),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Stops for this route are not available yet.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppColors.navyTextSecondary),
+            style:
+                textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -293,204 +267,158 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     required bool isExpanded,
     required VoidCallback onTap,
   }) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Timeline connector
-          SizedBox(
-            width: 32,
-            child: Column(
-              children: [
-                if (!isFirst)
-                  Expanded(
-                    child: Container(width: 2, color: AppColors.navyBorder),
-                  )
-                else
-                  const Expanded(child: SizedBox()),
-                Container(
-                  width: isFirst || isLast ? 22 : 14,
-                  height: isFirst || isLast ? 22 : 14,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isFirst || isLast ? AppColors.navy : AppColors.white,
-                    border: Border.all(
-                      color: isFirst || isLast
-                          ? AppColors.navy
-                          : AppColors.navyBorder,
-                      width: 2,
-                    ),
-                  ),
-                  child: isFirst || isLast
-                      ? Center(
-                          child: Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.white,
-                            ),
-                          ),
-                        )
-                      : Center(
-                          child: Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.navyBorder,
-                            ),
-                          ),
-                        ),
-                ),
-                if (!isLast)
-                  Expanded(
-                    child: Container(width: 2, color: AppColors.navyBorder),
-                  )
-                else
-                  const Expanded(child: SizedBox()),
-              ],
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Stack(
+      children: [
+        // Timeline connector: painted line + marker, fills the row height
+        // (avoids an intrinsic measurement pass per stop so long routes
+        // scroll smoothly).
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 32,
+          child: CustomPaint(
+            painter: _TimelineConnectorPainter(
+              lineColor: scheme.outlineVariant,
+              dotColor: isFirst || isLast ? scheme.primary : scheme.surface,
+              dotBorderColor:
+                  isFirst || isLast ? scheme.primary : scheme.outlineVariant,
+              innerColor:
+                  isFirst || isLast ? scheme.onPrimary : scheme.outlineVariant,
+              isFirst: isFirst,
+              isLast: isLast,
+              dotSize: isFirst || isLast ? 22 : 14,
             ),
           ),
-          const SizedBox(width: 8),
-          // Stop card
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 8),
-              child: GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.navyBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+        // Stop card (non-positioned → defines the row height).
+        Padding(
+          padding: EdgeInsets.fromLTRB(40, 0, 0, isLast ? 0 : 8),
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                children: [
-                                  if (stop.stopDesc.isNotEmpty) ...[
-                                    TextSpan(
-                                      text: stop.stopDesc,
-                                      style: const TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.navyTextSecondary,
-                                      ),
-                                    ),
-                                    const TextSpan(text: '  '),
-                                  ],
-                                  TextSpan(
-                                    text: stop.stopName,
-                                    style: const TextStyle(
-                                      fontFamily: 'Roboto',
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.navyTextPrimary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.navy,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.map_rounded,
-                                    size: 10, color: AppColors.white),
-                                SizedBox(width: 3),
-                                Text(
-                                  'Map',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            isExpanded
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.keyboard_arrow_down_rounded,
-                            size: 18,
-                            color: AppColors.navyTextHint,
-                          ),
-                        ],
-                      ),
-                      if (isExpanded) ...[
-                        const Divider(height: 20),
-                        const Text(
-                          'UPCOMING ARRIVALS',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                            color: AppColors.navyTextTertiary,
-                          ),
+                      Expanded(
+                        child: Text(
+                          stop.stopName,
+                          style: textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w500),
                         ),
-                        const SizedBox(height: 8),
-                        _buildArrivals(stop),
-                      ],
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ],
                   ),
-                ),
+                  if (isExpanded) ...[
+                    const Divider(height: 20),
+                    Text(
+                      'UPCOMING ARRIVALS',
+                      style:
+                          textTheme.labelMedium?.copyWith(letterSpacing: 0.5),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildArrivals(stop),
+                    const SizedBox(height: 12),
+                    _buildViewLiveMapButton(stop),
+                  ],
+                ],
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   /// Upcoming departures for the expanded stop (selected direction).
   Widget _buildArrivals(RouteStop stop) {
     if (_routeController.isLoadingEta) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: SizedBox(
             width: 16,
             height: 16,
             child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.navy),
+                strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
           ),
         ),
       );
     }
-    final departures = _routeController.selectedDirectionDepartures;
+    final departures = _routeController.selectedDirectionDepartures
+        .where((d) => d.countdownMinutes() <= 60)
+        .toList();
     if (departures.isEmpty) {
       return Text(
         _routeController.etaError ?? 'No upcoming departures.',
-        style:
-            const TextStyle(fontSize: 12, color: AppColors.navyTextSecondary),
+        style: Theme.of(context).textTheme.bodySmall,
       );
     }
     return Column(
       children: [
         for (final departure in departures.take(3))
           _buildArrivalRow(
-            vehicle: departure.tripId,
+            vehicle: departure.liveVehicleId ??
+                departure.scheduledVehicleId ??
+                departure.tripId,
             eta: _formatCountdown(departure.countdownMinutes()),
+            isLive: departure.firstValidVehicle != null,
           ),
       ],
+    );
+  }
+
+  /// Opens the full stop detail (live map + live countdown) for [stop].
+  void _openStopDetail(RouteStop stop) {
+    final providerId = widget.providerId;
+    if (providerId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StopDetailScreen(
+          stopName: stop.stopName,
+          stopLine: widget.route.routeShortName,
+          latitude: stop.stopLat,
+          longitude: stop.stopLon,
+          stopId: stop.stopId,
+          providerId: providerId,
+          providerKey: widget.providerKey,
+          route: widget.route,
+        ),
+      ),
+    );
+  }
+
+  /// Full-width "View live map" action colored by the provider theme.
+  Widget _buildViewLiveMapButton(RouteStop stop) {
+    final theme = ProviderTheme.of(widget.providerKey);
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => _openStopDetail(stop),
+        style: FilledButton.styleFrom(
+          backgroundColor: theme.primary,
+          foregroundColor: theme.onPrimary,
+        ),
+        icon: const Icon(Icons.map_rounded),
+        label: const Text('View live map'),
+      ),
     );
   }
 
@@ -499,52 +427,144 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     return '$minutes min';
   }
 
-  Widget _buildArrivalRow({required String vehicle, required String eta}) {
+  Widget _buildArrivalRow({
+    required String vehicle,
+    required String eta,
+    required bool isLive,
+  }) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.navyBorder),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.emerald,
+            if (isLive)
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.emerald,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  vehicle,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.navyTextSecondary,
+                  const SizedBox(width: 8),
+                  Text(
+                    vehicle,
+                    style: textTheme.labelMedium
+                        ?.copyWith(fontFamily: 'monospace'),
                   ),
-                ),
-              ],
-            ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Icon(Icons.schedule_rounded,
+                      size: 12, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Scheduled service',
+                    style: textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
             Text(
               eta,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: AppColors.navyTextPrimary,
-              ),
+              style:
+                  textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// Paints the timeline connector (vertical line + marker dot) for a stop row.
+///
+/// Replaces the per-row `IntrinsicHeight` layout with a single paint pass so
+/// long routes avoid an extra measurement round per stop. The [CustomPaint]
+/// fills the row height via [Positioned], and the marker is centered on the
+/// row, matching the previous layout.
+class _TimelineConnectorPainter extends CustomPainter {
+  _TimelineConnectorPainter({
+    required this.lineColor,
+    required this.dotColor,
+    required this.dotBorderColor,
+    required this.innerColor,
+    required this.isFirst,
+    required this.isLast,
+    required this.dotSize,
+  });
+
+  final Color lineColor;
+  final Color dotColor;
+  final Color dotBorderColor;
+  final Color innerColor;
+  final bool isFirst;
+  final bool isLast;
+  final double dotSize;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+    final radius = dotSize / 2;
+
+    final line = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2;
+
+    // Line from the previous stop down to the marker.
+    if (!isFirst) {
+      canvas.drawLine(
+        Offset(centerX, 0),
+        Offset(centerX, centerY - radius),
+        line,
+      );
+    }
+    // Line from the marker down to the next stop.
+    if (!isLast) {
+      canvas.drawLine(
+        Offset(centerX, centerY + radius),
+        Offset(centerX, size.height),
+        line,
+      );
+    }
+
+    // Marker dot: fill + border.
+    canvas.drawCircle(
+        Offset(centerX, centerY), radius, Paint()..color = dotColor);
+    canvas.drawCircle(
+      Offset(centerX, centerY),
+      radius,
+      Paint()
+        ..color = dotBorderColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    // Inner dot.
+    canvas.drawCircle(Offset(centerX, centerY), 3, Paint()..color = innerColor);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TimelineConnectorPainter oldDelegate) {
+    return oldDelegate.lineColor != lineColor ||
+        oldDelegate.dotColor != dotColor ||
+        oldDelegate.dotBorderColor != dotBorderColor ||
+        oldDelegate.innerColor != innerColor ||
+        oldDelegate.isFirst != isFirst ||
+        oldDelegate.isLast != isLast ||
+        oldDelegate.dotSize != dotSize;
   }
 }

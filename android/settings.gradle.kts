@@ -19,7 +19,9 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "9.0.1" apply false
+    // AGP 8.x: AGP 9 removed support for `getDefaultProguardFile('proguard-android.txt')`,
+    // which the transitive flutter_inappwebview_android plugin still uses (unreleased fix).
+    id("com.android.application") version "8.13.0" apply false
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
 }
 
