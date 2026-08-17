@@ -19,6 +19,9 @@ class ApiService {
   /// App-wide device ID, shared the same way as [_powToken].
   static String? _deviceId;
 
+  /// App-wide account access token for authenticated user endpoints.
+  static String? _accountToken;
+
   /// Configures the PoW token used to authorise transit requests. Called by
   /// the bootstrap coordinator once a valid token has been obtained.
   static void setPowToken(String? token) => _powToken = token;
@@ -26,6 +29,9 @@ class ApiService {
   /// Configures the device ID sent with every transit request. Called by the
   /// bootstrap coordinator as soon as the device identity is known.
   static void setDeviceId(String? deviceId) => _deviceId = deviceId;
+
+  /// Configures the account bearer token for authenticated user endpoints.
+  static void setAccountToken(String? token) => _accountToken = token;
 
   /// True once a non-empty PoW token has been configured.
   static bool get hasPowToken => _powToken != null && _powToken!.isNotEmpty;
@@ -37,6 +43,8 @@ class ApiService {
           ApiConfig.powTokenHeader: _powToken!,
         if (_deviceId != null && _deviceId!.isNotEmpty)
           ApiConfig.deviceIdHeader: _deviceId!,
+        if (_accountToken != null && _accountToken!.isNotEmpty)
+          'Authorization': 'Bearer $_accountToken',
       };
 
   /// Debug breadcrumb for every transit request: shows the URL and whether

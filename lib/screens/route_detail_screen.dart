@@ -3,6 +3,8 @@ import '../controllers/route_controller.dart';
 import '../models/route_stop.dart';
 import '../models/transit_route.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common/app_services.dart';
+import '../widgets/common/star_button.dart';
 import '../widgets/stops/route_color_badge.dart';
 import 'stop_detail_screen.dart';
 
@@ -112,6 +114,17 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             ],
           ),
         ),
+        actions: [
+          if (widget.providerId != null)
+            StarButton(
+              authService: AppServices.auth(context),
+              favouriteService: AppServices.favs(context),
+              providerId: widget.providerId!,
+              type: 'route',
+              routeId: widget.route.routeId,
+              defaultLabel: widget.route.routeShortName,
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(

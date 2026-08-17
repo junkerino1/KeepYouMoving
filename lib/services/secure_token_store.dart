@@ -14,6 +14,7 @@ class SecureTokenStore {
   static const _deviceIdKey = 'device_id';
   static const _powTokenKey = 'pow_token';
   static const _powExpiresAtKey = 'pow_token_expires_at';
+  static const _accountTokenKey = 'account_access_token';
 
   /// Reads the persisted device ID, or `null` on a fresh install.
   Future<String?> readDeviceId() => _storage.read(key: _deviceIdKey);
@@ -47,4 +48,14 @@ class SecureTokenStore {
     await _storage.delete(key: _powTokenKey);
     await _storage.delete(key: _powExpiresAtKey);
   }
+
+  /// Reads the persisted account access token, or `null` when not logged in.
+  Future<String?> readAccountToken() => _storage.read(key: _accountTokenKey);
+
+  /// Persists the account access token after login.
+  Future<void> writeAccountToken(String token) =>
+      _storage.write(key: _accountTokenKey, value: token);
+
+  /// Removes the stored account token (on logout).
+  Future<void> clearAccountToken() => _storage.delete(key: _accountTokenKey);
 }

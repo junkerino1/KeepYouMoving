@@ -10,6 +10,8 @@ import '../models/transit_route.dart';
 import '../services/app_location_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/common/app_services.dart';
+import '../widgets/common/star_button.dart';
 import '../widgets/map/live_bus_marker.dart';
 import '../widgets/map/live_map.dart';
 import '../widgets/map/stop_dot.dart';
@@ -544,6 +546,15 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
               style: textTheme.titleSmall,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          // Star button
+          StarButton(
+            authService: AppServices.auth(context),
+            favouriteService: AppServices.favs(context),
+            providerId: widget.providerId,
+            type: 'stop',
+            stopId: widget.stopId,
+            defaultLabel: widget.stopName,
           ),
         ],
       ),

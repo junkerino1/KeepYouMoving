@@ -14,7 +14,9 @@ import '../services/app_location_service.dart';
 import '../services/provider_repository.dart';
 import '../services/route_list_cache.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common/app_services.dart';
 import '../widgets/common/map_status_chip.dart';
+import '../widgets/common/star_button.dart';
 import '../widgets/map/live_bus_marker.dart';
 import '../widgets/map/live_map.dart';
 import '../widgets/map/nearest_stop_marker.dart';
@@ -739,6 +741,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       _routeController.selectedDirectionStops.length,
                   isBidirectional: _routeController.isBidirectional,
                   currentDirection: _routeController.selectedDirection,
+                  providerId: _selectedProvider?.id,
                   onClear: _clearRouteContext,
                   onViewDetail: () => _openRouteDetailFromContext(),
                   onDirectionToggle: _onRouteDirectionToggle,
@@ -924,6 +927,7 @@ class _RouteInfoBar extends StatelessWidget {
   final int stopCount;
   final bool isBidirectional;
   final int? currentDirection;
+  final int? providerId;
   final VoidCallback onClear;
   final VoidCallback onViewDetail;
   final VoidCallback onDirectionToggle;
@@ -935,6 +939,7 @@ class _RouteInfoBar extends StatelessWidget {
     required this.stopCount,
     required this.isBidirectional,
     required this.currentDirection,
+    this.providerId,
     required this.onClear,
     required this.onViewDetail,
     required this.onDirectionToggle,
@@ -1025,6 +1030,15 @@ class _RouteInfoBar extends StatelessWidget {
                   onPressed: onViewDetail,
                   visualDensity: VisualDensity.compact,
                 ),
+                if (providerId != null)
+                  StarButton(
+                    authService: AppServices.auth(context),
+                    favouriteService: AppServices.favs(context),
+                    providerId: providerId!,
+                    type: 'route',
+                    routeId: route.routeId,
+                    defaultLabel: route.routeShortName,
+                  ),
                 IconButton(
                   icon: Icon(Icons.close_rounded,
                       size: 18, color: scheme.onSurfaceVariant),
