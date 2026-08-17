@@ -9,8 +9,10 @@ import '../controllers/journey_controller.dart';
 import '../models/journey_option.dart';
 import '../models/transit_provider.dart';
 import '../services/app_location_service.dart';
+import '../services/api_service.dart';
 import '../services/provider_repository.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_envelope.dart';
 import '../utils/format.dart';
 import '../widgets/stops/provider_switcher.dart';
 
@@ -53,6 +55,7 @@ class JourneyPlannerScreen extends StatefulWidget {
 
 class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
   final JourneyController _controller = JourneyController();
+  final ApiService _api = ApiService();
   final MapController _mapController = MapController();
   final TextEditingController _originSearchController = TextEditingController();
   final TextEditingController _destSearchController = TextEditingController();
@@ -78,6 +81,10 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
   List<LatLng> _originWalkPolyline = [];
   List<LatLng> _destWalkPolyline = [];
   bool _isLoadingWalkRoutes = false;
+
+  // Transit route polyline (GTFS shape between boarding and alighting)
+  List<LatLng> _transitPolyline = [];
+  bool _isLoadingTransitRoute = false;
 
   // Results sheet drag state
   double _sheetHeight = 0; // 0 = auto, >0 = explicit height
@@ -318,13 +325,17 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     } catch (_) {}
   }
 
-  /// Tapping a journey result: plot it on the map with walking routes.
+  /// Tapping a journey result: plot it on the map with walking + transit routes.
   Future<void> _onOptionTap(JourneyOption option) async {
     setState(() {
       _selectedOption = option;
       _originWalkPolyline = [];
       _destWalkPolyline = [];
+      _transitPolyline = [];
       _isLoadingWalkRoutes = true;
+      _isLoadingTransitRoute = true;
+      _sheetMinimized = false;
+      _sheetHeight = 0;
     });
 
     final origin = _controller.origin;
@@ -337,6 +348,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
       option.targetStop.stopLon,
     );
     final dest = _controller.destination;
+    final providerId = _selectedProvider?.id ?? widget.providerId ?? 3;
 
     final futures = <Future<List<LatLng>>>[];
     futures.add(origin != null
@@ -345,6 +357,13 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     futures.add(dest != null
         ? _fetchWalkingRoute(alighting, dest)
         : Future.value(<LatLng>[]));
+    futures.add(_fetchTransitGeometry(
+      providerId,
+      option.routeId,
+      option.directionId,
+      boarding,
+      alighting,
+    ));
 
     final results = await Future.wait(futures);
     if (!mounted) return;
@@ -352,10 +371,18 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     setState(() {
       _originWalkPolyline = results[0];
       _destWalkPolyline = results[1];
+      _transitPolyline = results[2];
       _isLoadingWalkRoutes = false;
+      _isLoadingTransitRoute = false;
     });
 
     _fitMapToFullJourney(option);
+
+    _controller.loadBoardingEta(
+      providerId: providerId,
+      routeId: option.routeId,
+      stopId: option.boardingStop.stopId,
+    );
   }
 
   Future<List<LatLng>> _fetchWalkingRoute(LatLng from, LatLng to) async {
@@ -390,11 +417,73 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     }
   }
 
+  int _findNearestIndex(List<LatLng> points, LatLng target) {
+    var bestIdx = 0;
+    var bestDist = double.infinity;
+    for (var i = 0; i < points.length; i++) {
+      final dx = points[i].latitude - target.latitude;
+      final dy = points[i].longitude - target.longitude;
+      final d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }
+
+  List<LatLng> _sliceGeometry(List<LatLng> shape, LatLng board, LatLng alight) {
+    if (shape.isEmpty) return [];
+    final boardIdx = _findNearestIndex(shape, board);
+    final alightIdx = _findNearestIndex(shape, alight);
+    final start = boardIdx < alightIdx ? boardIdx : alightIdx;
+    final end = boardIdx < alightIdx ? alightIdx : boardIdx;
+    return shape.sublist(start, end + 1);
+  }
+
+  Future<List<LatLng>> _fetchTransitGeometry(
+    int providerId,
+    String routeId,
+    String directionId,
+    LatLng boarding,
+    LatLng alighting,
+  ) async {
+    try {
+      final response =
+          await _api.get('$providerId/$routeId/$directionId/shapes');
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final shapes = extractItems(decoded);
+      final allPoints = <LatLng>[];
+      for (final shape in shapes) {
+        final shapeMap = shape as Map<String, dynamic>;
+        final rawPoints = shapeMap['points'] as List<dynamic>? ?? const [];
+        final entries = <(int, LatLng)>[];
+        for (final p in rawPoints) {
+          final m = p as Map<String, dynamic>;
+          entries.add((
+            int.parse(m['shape_pt_sequence'] as String),
+            LatLng(
+              double.parse(m['shape_pt_lat'] as String),
+              double.parse(m['shape_pt_lon'] as String),
+            ),
+          ));
+        }
+        entries.sort((a, b) => a.$1.compareTo(b.$1));
+        allPoints.addAll(entries.map((e) => e.$2));
+      }
+      return _sliceGeometry(allPoints, boarding, alighting);
+    } catch (_) {
+      return [];
+    }
+  }
+
   void _fitMapToFullJourney(JourneyOption option) {
     final points = <LatLng>[
       if (_controller.origin != null) _controller.origin!,
       ..._originWalkPolyline,
       LatLng(option.boardingStop.stopLat, option.boardingStop.stopLon),
+      ..._transitPolyline,
       LatLng(option.targetStop.stopLat, option.targetStop.stopLon),
       ..._destWalkPolyline,
       if (_controller.destination != null) _controller.destination!,
@@ -475,6 +564,17 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                         strokeWidth: 4,
                         color: AppColors.red,
                         pattern: StrokePattern.dashed(segments: [8, 6]),
+                      ),
+                    ]),
+                  // Transit route (GTFS shape)
+                  if (_transitPolyline.length >= 2)
+                    PolylineLayer(polylines: [
+                      Polyline(
+                        points: _transitPolyline,
+                        strokeWidth: 6,
+                        color: ProviderTheme.of(widget.providerKey)
+                            .primary
+                            .withValues(alpha: 0.8),
                       ),
                     ]),
                   // Boarding marker
@@ -566,6 +666,17 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                   child: _buildChip(
                     icon: Icons.directions_walk,
                     text: 'Loading walk route...',
+                    showSpinner: true,
+                  ),
+                ),
+              // Transit route loading indicator
+              if (_isLoadingTransitRoute && !_isLoadingWalkRoutes)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: _buildChip(
+                    icon: Icons.directions_bus,
+                    text: 'Loading transit route...',
                     showSpinner: true,
                   ),
                 ),
@@ -1193,15 +1304,17 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     final textTheme = Theme.of(context).textTheme;
     final theme = ProviderTheme.of(widget.providerKey);
     final isSelected = _selectedOption == option;
+    final departures =
+        isSelected ? _controller.boardingDepartures : const [];
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isSelected
             ? scheme.primaryContainer.withValues(alpha: 0.2)
             : scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isSelected ? scheme.primary : scheme.outlineVariant,
           width: isSelected ? 1.5 : 1,
@@ -1209,51 +1322,148 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
       ),
       child: InkWell(
         onTap: () => _onOptionTap(option),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Route badge and metadata
               Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: theme.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       option.routeShortName,
-                      style: textTheme.labelLarge?.copyWith(
+                      style: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: theme.onPrimary,
+                        fontSize: 18,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child:
-                        Text(option.routeTypeLabel, style: textTheme.labelSmall),
+                    child: Text(option.routeTypeLabel,
+                        style: textTheme.labelMedium),
                   ),
                   if (option.transferCount > 0) ...[
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Text(
                       '${option.transferCount} transfer${option.transferCount > 1 ? 's' : ''}',
-                      style:
-                          textTheme.labelSmall?.copyWith(color: scheme.error),
+                      style: textTheme.labelMedium
+                          ?.copyWith(color: scheme.error),
                     ),
                   ],
                 ],
               ),
+              // Transit details and ETA
+              if (isSelected) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.route_rounded,
+                          size: 18, color: theme.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${option.boardingStop.stopName} → ${option.targetStop.stopName}',
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${formatDistance(option.boardingStop.distanceM)} walk to stop',
+                              style: textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // ETA display
+                      if (_controller.isLoadingEta)
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
+                        )
+                      else if (departures.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${departures.first.countdownMinutes()}',
+                              style: textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: theme.primary,
+                                height: 1,
+                              ),
+                            ),
+                            Text(
+                              'min',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: theme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                // Next departures row
+                if (departures.length > 1) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        'Next: ',
+                        style: textTheme.labelMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      ...departures.skip(1).map((d) => Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              '${d.countdownMinutes()} min',
+                              style: textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                          )),
+                    ],
+                  ),
+                ],
+              ],
               const SizedBox(height: 12),
+              // Stop rows
               _buildStopRow(
                 icon: Icons.login_rounded,
                 label: 'Board at',
@@ -1290,8 +1500,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     final textTheme = Theme.of(context).textTheme;
     return Row(
       children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 10),
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1301,8 +1511,10 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                       ?.copyWith(color: scheme.onSurfaceVariant)),
               Text(
                 stopName,
-                style:
-                    textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                style: textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../models/eta_departure.dart';
 import '../models/journey_option.dart';
 import '../services/api_service.dart';
+import '../utils/api_envelope.dart';
 
 /// Manages journey planning: origin/destination selection and API calls.
 class JourneyController extends ChangeNotifier {
@@ -23,6 +25,9 @@ class JourneyController extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
 
+  List<EtaDeparture> _boardingDepartures = [];
+  bool _isLoadingEta = false;
+
   LatLng? get origin => _origin;
   LatLng? get destination => _destination;
   String? get originLabel => _originLabel;
@@ -31,6 +36,10 @@ class JourneyController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get canPlan => _origin != null && _destination != null;
+
+  List<EtaDeparture> get boardingDepartures =>
+      List.unmodifiable(_boardingDepartures);
+  bool get isLoadingEta => _isLoadingEta;
 
   /// Sets the origin location. Clears results when changed.
   void setOrigin(LatLng position, {String? label}) {
@@ -112,6 +121,39 @@ class JourneyController extends ChangeNotifier {
       _options = [];
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Fetches upcoming departures for the boarding stop of a journey option.
+  Future<void> loadBoardingEta({
+    required int providerId,
+    required String routeId,
+    required String stopId,
+  }) async {
+    if (_isLoadingEta) return;
+    _isLoadingEta = true;
+    notifyListeners();
+    try {
+      final response = await _api.get('$providerId/eta/$routeId/$stopId');
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final payload = unwrapData(decoded);
+      final data = payload['departures'] as List<dynamic>? ?? const [];
+      final now = DateTime.now().toUtc();
+      final upcoming = data
+          .map((e) => EtaDeparture.fromJson(e as Map<String, dynamic>))
+          .where((d) =>
+              !d.scheduledAtLocal.toUtc().isBefore(now.subtract(const Duration(minutes: 1))))
+          .toList()
+        ..sort((a, b) => a.scheduledAtLocal.compareTo(b.scheduledAtLocal));
+      _boardingDepartures = upcoming.take(3).toList(growable: false);
+    } catch (_) {
+      _boardingDepartures = [];
+    } finally {
+      _isLoadingEta = false;
       notifyListeners();
     }
   }
