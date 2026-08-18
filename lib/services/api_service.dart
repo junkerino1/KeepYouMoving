@@ -74,11 +74,40 @@ class ApiService {
     return response;
   }
 
+  /// Sends a GET request to an account/favourite endpoint at the API root.
+  /// These endpoints intentionally do not use the `/public-transport/`
+  /// prefix, but retain the configured account/device headers.
+  Future<http.Response> getRoot(String endpoint) async {
+    final url = Uri.parse('${ApiConfig.prodBase}/$endpoint');
+    final headers = _authHeaders();
+    _logRequest('GET', url, headers);
+
+    final response = await http.get(url, headers: headers);
+    _logResponse(url, response.statusCode);
+    return response;
+  }
+
   /// Sends a JSON `POST` request to `[ApiConfig.publicTransportBase][endpoint]`.
   Future<http.Response> post(String endpoint, {Object? body}) async {
     final url = Uri.parse(
       '${ApiConfig.publicTransportBase}$endpoint',
     );
+    final headers = {..._authHeaders(), 'Content-Type': 'application/json'};
+    _logRequest('POST', url, headers);
+
+    final response = await http.post(
+      url,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+    _logResponse(url, response.statusCode);
+    return response;
+  }
+
+  /// Sends a JSON POST request to an account/favourite endpoint at the API
+  /// root, without the `/public-transport/` prefix.
+  Future<http.Response> postRoot(String endpoint, {Object? body}) async {
+    final url = Uri.parse('${ApiConfig.prodBase}/$endpoint');
     final headers = {..._authHeaders(), 'Content-Type': 'application/json'};
     _logRequest('POST', url, headers);
 

@@ -198,34 +198,42 @@ class EtaItem extends StatelessWidget {
 
     if (progress == null) return const SizedBox.shrink();
 
+    final departed = progress.hasDeparted;
+    final arrived = progress.hasArrived;
+    final statusColor = departed
+        ? scheme.error
+        : arrived
+            ? AppColors.emeraldDark
+            : scheme.onSurfaceVariant;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: progress.hasArrived
-            ? AppColors.emeraldDark.withValues(alpha: 0.15)
-            : scheme.surfaceContainerHigh,
+        color: departed
+            ? scheme.errorContainer.withValues(alpha: 0.45)
+            : arrived
+                ? AppColors.emeraldDark.withValues(alpha: 0.15)
+                : scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            progress.hasArrived
-                ? Icons.check_circle_outline_rounded
-                : Icons.directions_bus_outlined,
+            departed
+                ? Icons.flag_outlined
+                : arrived
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.directions_bus_outlined,
             size: 12,
-            color: progress.hasArrived
-                ? AppColors.emeraldDark
-                : scheme.onSurfaceVariant,
+            color: statusColor,
           ),
           const SizedBox(width: 4),
           Text(
-            progress.hasArrived ? 'Arriving' : progress.label,
+            arrived ? 'Arriving' : progress.label,
             style: textTheme.labelSmall?.copyWith(
               fontWeight: FontWeight.w600,
-              color: progress.hasArrived
-                  ? AppColors.emeraldDark
-                  : scheme.onSurfaceVariant,
+              color: statusColor,
             ),
           ),
         ],

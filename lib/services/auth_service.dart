@@ -40,11 +40,19 @@ class AuthService extends ChangeNotifier {
   void listenForOAuthCallback() {
     _linkSub?.cancel();
     final appLinks = AppLinks();
-    _linkSub = appLinks.uriLinkStream.listen((uri) {
-      if (uri.host == 'oauth' && uri.path == '/callback') {
-        _handleOAuthCallback(uri);
-      }
-    }, onError: (_) {});
+    _linkSub = appLinks.uriLinkStream.listen(
+      _handleIncomingLink,
+      onError: (_) {},
+    );
+  }
+
+  void _handleIncomingLink(Uri uri) {
+    if (uri.scheme.toLowerCase() != 'keepyoumoving' ||
+        uri.host.toLowerCase() != 'oauth' ||
+        uri.path != '/callback') {
+      return;
+    }
+    unawaited(_handleOAuthCallback(uri));
   }
 
   /// Calls the backend to get the Google OAuth URL, then opens it in browser.
@@ -53,7 +61,7 @@ class AuthService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final response = await _api.post('account/retrieve-oauth-url');
+      final response = await _api.postRoot('account/retrieve-oauth-url');
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
@@ -92,7 +100,7 @@ class AuthService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final response = await _api.post(
+      final response = await _api.postRoot(
         'account/oauth-callback',
         body: {'code': code, 'state': state},
       );
@@ -108,8 +116,8 @@ class AuthService extends ChangeNotifier {
       }
       await _store.writeAccountToken(accessToken);
       ApiService.setAccountToken(accessToken);
-      _account = Account.fromJson(
-          data['account'] as Map<String, dynamic>? ?? {});
+      _account =
+          Account.fromJson(data['account'] as Map<String, dynamic>? ?? {});
       _isLoading = false;
       _error = null;
       notifyListeners();
@@ -123,7 +131,7 @@ class AuthService extends ChangeNotifier {
   /// Fetches the current account details from the backend.
   Future<void> fetchAccount() async {
     try {
-      final response = await _api.get('account/me');
+      final response = await _api.getRoot('account/me');
       if (response.statusCode != 200) {
         if (response.statusCode == 401) {
           await _store.clearAccountToken();
@@ -135,8 +143,8 @@ class AuthService extends ChangeNotifier {
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final data = decoded['data'] as Map<String, dynamic>? ?? {};
-      _account = Account.fromJson(
-          data['account'] as Map<String, dynamic>? ?? {});
+      _account =
+          Account.fromJson(data['account'] as Map<String, dynamic>? ?? {});
       notifyListeners();
     } catch (_) {}
   }
@@ -144,7 +152,7 @@ class AuthService extends ChangeNotifier {
   /// Fetches the list of sessions for the current account.
   Future<List<AccountSession>> fetchSessions() async {
     try {
-      final response = await _api.get('account/sessions');
+      final response = await _api.getRoot('account/sessions');
       if (response.statusCode != 200) return [];
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final data = decoded['data'] as Map<String, dynamic>? ?? {};
@@ -160,7 +168,7 @@ class AuthService extends ChangeNotifier {
   /// Revokes a specific session by ID.
   Future<bool> revokeSession(String sessionId) async {
     try {
-      final response = await _api.post(
+      final response = await _api.postRoot(
         'account/sessions/revoke',
         body: {'session_id': sessionId},
       );
@@ -173,7 +181,7 @@ class AuthService extends ChangeNotifier {
   /// Logs out the current session and clears local state.
   Future<void> logout() async {
     try {
-      await _api.post('account/logout');
+      await _api.postRoot('account/logout');
     } catch (_) {}
     await _store.clearAccountToken();
     ApiService.setAccountToken(null);

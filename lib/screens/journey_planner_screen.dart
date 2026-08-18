@@ -93,6 +93,10 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
   double _dragStartHeight = 0;
   bool _sheetMinimized = false;
 
+  // The journey form collapses after a route is selected so the map and the
+  // selected route details have the available screen space.
+  bool _searchPanelMinimized = false;
+
   // Map-tap mode: 'origin' or 'destination'
   String? _mapTapMode;
 
@@ -306,9 +310,12 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
       _selectedOption = null;
       _originWalkPolyline = [];
       _destWalkPolyline = [];
+      _transitPolyline = [];
+      _searchPanelMinimized = false;
+      _sheetMinimized = false;
+      _sheetHeight = 0;
     });
-    final providerId =
-        _selectedProvider?.id ?? widget.providerId ?? 3;
+    final providerId = _selectedProvider?.id ?? widget.providerId ?? 3;
     await _controller.planJourney(providerId: providerId);
     _fitMapToJourney();
   }
@@ -334,6 +341,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
       _transitPolyline = [];
       _isLoadingWalkRoutes = true;
       _isLoadingTransitRoute = true;
+      _searchPanelMinimized = true;
       _sheetMinimized = false;
       _sheetHeight = 0;
     });
@@ -501,7 +509,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Search panel (always visible at top)
+        // Search panel (automatically compact after selecting a route)
         _buildSearchPanel(),
         // Map + overlays
         Expanded(
@@ -517,10 +525,9 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                 ),
                 children: [
                   TileLayer(
-                    urlTemplate:
-                        Theme.of(context).brightness == Brightness.dark
-                            ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                            : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                    urlTemplate: Theme.of(context).brightness == Brightness.dark
+                        ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                        : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                     retinaMode: RetinaMode.isHighDensity(context),
                     userAgentPackageName: 'com.example.gtfs_rapid_flutter',
                   ),
@@ -648,8 +655,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () =>
-                                setState(() => _mapTapMode = null),
+                            onPressed: () => setState(() => _mapTapMode = null),
                             child: const Text('Cancel',
                                 style: TextStyle(color: Colors.white)),
                           ),
@@ -733,7 +739,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
         color: scheme.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
-          BoxShadow(color: Color(0x0D000000), blurRadius: 8, offset: Offset(0, 2)),
+          BoxShadow(
+              color: Color(0x0D000000), blurRadius: 8, offset: Offset(0, 2)),
         ],
       ),
       child: Row(
@@ -762,6 +769,52 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
   Widget _buildSearchPanel() {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
+    if (_searchPanelMinimized && _selectedOption != null) {
+      final origin = _controller.originLabel ?? 'Origin';
+      final destination = _controller.destinationLabel ?? 'Destination';
+      return Material(
+        color: scheme.surface,
+        child: InkWell(
+          onTap: () => setState(() => _searchPanelMinimized = false),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.route_rounded, size: 20, color: scheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Plan Journey',
+                        style: textTheme.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        '$origin -> $destination',
+                        style: textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.keyboard_arrow_down_rounded,
+                    color: scheme.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
@@ -776,6 +829,13 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
             children: [
               Text('Plan Journey', style: textTheme.titleMedium),
               const Spacer(),
+              if (_selectedOption != null)
+                IconButton(
+                  onPressed: () => setState(() => _searchPanelMinimized = true),
+                  icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 20),
+                  tooltip: 'Collapse journey form',
+                  visualDensity: VisualDensity.compact,
+                ),
               ListenableBuilder(
                 listenable: _controller,
                 builder: (context, _) {
@@ -1002,8 +1062,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                   label,
                   style: textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color:
-                        isActive ? Colors.white : scheme.onSurfaceVariant,
+                    color: isActive ? Colors.white : scheme.onSurfaceVariant,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1045,8 +1104,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                             strokeWidth: 2, color: scheme.primary),
                       ),
                       const SizedBox(width: 12),
-                      Text('Searching places...',
-                          style: textTheme.bodySmall),
+                      Text('Searching places...', style: textTheme.bodySmall),
                     ],
                   ),
                 ),
@@ -1139,6 +1197,30 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     final maxHeight = MediaQuery.sizeOf(context).height * 0.45;
     final minHeight = 60.0; // Just the handle + header
 
+    // Once a route is selected, collapse the route picker and retain only the
+    // selected route card over the map.
+    final selectedOption = _selectedOption;
+    if (selectedOption != null) {
+      return Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 16,
+              offset: Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: _buildJourneyCard(selectedOption),
+        ),
+      );
+    }
+
     // When minimized, show only the header bar.
     if (_sheetMinimized) {
       return GestureDetector(
@@ -1147,8 +1229,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
           height: 56,
           decoration: BoxDecoration(
             color: scheme.surface,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             boxShadow: const [
               BoxShadow(
                   color: Color(0x1A000000),
@@ -1206,9 +1287,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 16,
-              offset: Offset(0, -4)),
+              color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, -4)),
         ],
       ),
       child: Column(
@@ -1265,8 +1344,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Row(
               children: [
-                Icon(Icons.directions_rounded,
-                    size: 16, color: scheme.primary),
+                Icon(Icons.directions_rounded, size: 16, color: scheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   '${options.length} route${options.length == 1 ? '' : 's'} found',
@@ -1274,8 +1352,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                 ),
                 const Spacer(),
                 IconButton(
-                  onPressed: () =>
-                      setState(() => _sheetMinimized = true),
+                  onPressed: () => setState(() => _sheetMinimized = true),
                   icon: Icon(Icons.keyboard_arrow_down_rounded,
                       size: 20, color: scheme.onSurfaceVariant),
                   tooltip: 'Minimize',
@@ -1304,8 +1381,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
     final textTheme = Theme.of(context).textTheme;
     final theme = ProviderTheme.of(widget.providerKey);
     final isSelected = _selectedOption == option;
-    final departures =
-        isSelected ? _controller.boardingDepartures : const [];
+    final departures = isSelected ? _controller.boardingDepartures : const [];
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -1332,8 +1408,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: theme.primary,
                       borderRadius: BorderRadius.circular(8),
@@ -1349,8 +1425,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                   ),
                   const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(8),
@@ -1362,8 +1438,8 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                     const SizedBox(width: 10),
                     Text(
                       '${option.transferCount} transfer${option.transferCount > 1 ? 's' : ''}',
-                      style: textTheme.labelMedium
-                          ?.copyWith(color: scheme.error),
+                      style:
+                          textTheme.labelMedium?.copyWith(color: scheme.error),
                     ),
                   ],
                 ],
@@ -1374,14 +1450,12 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh
-                        .withValues(alpha: 0.5),
+                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.route_rounded,
-                          size: 18, color: theme.primary),
+                      Icon(Icons.route_rounded, size: 18, color: theme.primary),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(

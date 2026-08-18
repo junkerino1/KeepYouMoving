@@ -24,15 +24,20 @@ class VehicleProgress {
       stopsAway: (progress['stops_away'] as num?)?.toInt() ?? 0,
       confidence: progress['confidence'] as String? ?? 'unknown',
       currentStopSequence: (progress['current_stop_sequence'] as num?)?.toInt(),
-      targetStopSequence:
-          (progress['target_stop_sequence'] as num?)?.toInt(),
+      targetStopSequence: (progress['target_stop_sequence'] as num?)?.toInt(),
       targetStopId: progress['target_stop_id'] as String? ?? '',
     );
   }
 
-  /// Human-readable label, e.g. "3 stops away".
-  String get label => '$stopsAway stop${stopsAway == 1 ? '' : 's'} away';
+  /// Human-readable label, including the terminal state returned when the
+  /// vehicle has already passed the target stop.
+  String get label => hasDeparted
+      ? 'Departed'
+      : '$stopsAway stop${stopsAway == 1 ? '' : 's'} away';
 
-  /// Whether the vehicle has arrived (0 stops away).
-  bool get hasArrived => stopsAway <= 0;
+  /// Whether the vehicle is at the target stop (0 stops away).
+  bool get hasArrived => stopsAway == 0;
+
+  /// Whether the vehicle has passed the target stop (negative stops away).
+  bool get hasDeparted => stopsAway < 0;
 }

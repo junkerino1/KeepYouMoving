@@ -22,7 +22,7 @@ class FavouriteService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final response = await _api.get('favourite/retrieve');
+      final response = await _api.getRoot('favourite/retrieve');
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
@@ -53,7 +53,7 @@ class FavouriteService extends ChangeNotifier {
       };
       if (routeId != null) body['route_id'] = routeId;
       if (stopId != null) body['stop_id'] = stopId;
-      final response = await _api.post('favourite/create', body: body);
+      final response = await _api.postRoot('favourite/create', body: body);
       if (response.statusCode == 201) {
         await loadFavourites();
         return true;
@@ -72,7 +72,7 @@ class FavouriteService extends ChangeNotifier {
     try {
       final body = <String, dynamic>{'id': id, 'label': label};
       if (sortOrder != null) body['sort_order'] = sortOrder;
-      final response = await _api.post('favourite/update', body: body);
+      final response = await _api.postRoot('favourite/update', body: body);
       if (response.statusCode == 200) {
         await loadFavourites();
         return true;
@@ -85,7 +85,8 @@ class FavouriteService extends ChangeNotifier {
 
   Future<bool> deleteFavourite(String id) async {
     try {
-      final response = await _api.post('favourite/delete', body: {'id': id});
+      final response =
+          await _api.postRoot('favourite/delete', body: {'id': id});
       if (response.statusCode == 200) {
         _favourites.removeWhere((f) => f['id'] == id);
         notifyListeners();
