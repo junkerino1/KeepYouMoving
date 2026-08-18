@@ -24,10 +24,17 @@ class RouteColorBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: theme.primary,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: theme.primary.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -50,8 +57,9 @@ class RouteColorBadge extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
-          Icon(Icons.directions_bus, size: iconSize, color: theme.onPrimary),
+          const SizedBox(width: 5),
+          Icon(Icons.directions_bus_rounded,
+              size: iconSize, color: theme.onPrimary),
         ],
       ),
     );

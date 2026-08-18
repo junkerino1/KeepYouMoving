@@ -2,14 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../controllers/route_controller.dart';
 import '../models/eta_departure.dart';
 import '../models/route_stop.dart';
 import '../models/transit_route.dart';
+import '../services/app_location_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/common/app_services.dart';
+import '../widgets/common/star_button.dart';
 import '../widgets/map/live_bus_marker.dart';
 import '../widgets/map/live_map.dart';
 import '../widgets/map/stop_dot.dart';
@@ -145,29 +147,17 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     });
   }
 
-  /// Fetches the user's real GPS position (like the live map) so their marker
-  /// can be shown when they are near this stop.
+  /// Fetches the user's real GPS position via the shared location service
+  /// (permission already granted by the live map screen).
   Future<void> _fetchUserLocation() async {
     if (_isFetchingUserLocation) return;
     _isFetchingUserLocation = true;
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      final pos = await AppLocationService.instance.getInitialLatLng();
       if (!mounted) return;
-      setState(() {
-        _userPosition = LatLng(position.latitude, position.longitude);
-      });
+      if (pos != null) {
+        setState(() => _userPosition = pos);
+      }
     } catch (_) {
       // Not shown — the user marker is simply omitted.
     } finally {
@@ -247,6 +237,47 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     _routeController.selectDirection(next);
     _focusOnStation();
     _routeController.ensureGeometry(providerId: providerId);
+  }
+
+  /// Highlights a bus on the map and fetches its stops-away progress.
+  void _onDepartureTap(EtaDeparture departure) {
+    final vehicleId = departure.liveVehicleId;
+    if (vehicleId == null || vehicleId.isEmpty) return;
+
+    // Toggle highlight: tap again to deselect.
+    final currentHighlight = _routeController.highlightedVehicleId;
+    if (currentHighlight == vehicleId) {
+      _routeController.setHighlightedVehicle(null);
+      return;
+    }
+
+    _routeController.setHighlightedVehicle(vehicleId);
+
+    // Fetch stops-away progress for this vehicle.
+    _routeController.loadVehicleProgress(
+      providerId: widget.providerId,
+      publicVehicleId: vehicleId,
+      targetStopId: widget.stopId,
+    );
+
+    // Pan the map to center on the live bus position.
+    final vehiclePos = departure.firstValidVehicle;
+    if (vehiclePos != null && vehiclePos.positionValid) {
+      final busLatLng = LatLng(vehiclePos.latitude, vehiclePos.longitude);
+      try {
+        final camera = _mapController.camera;
+        final height = camera.nonRotatedSize.y;
+        final mapHeight =
+            height > 0 ? height : MediaQuery.sizeOf(context).height;
+        _mapController.move(
+          busLatLng,
+          camera.zoom,
+          offset: Offset(0, -(mapHeight * 0.20)),
+        );
+      } catch (_) {
+        _mapController.move(busLatLng, 16.0);
+      }
+    }
   }
 
   /// Opens the route-detail screen for the route serving this stop, so the
@@ -384,13 +415,21 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           bus.position.latitude,
                           bus.position.longitude,
                         ),
-                        width: 48,
-                        height: 48,
+                        width: bus.publicVehicleId ==
+                                _routeController.highlightedVehicleId
+                            ? 64
+                            : 48,
+                        height: bus.publicVehicleId ==
+                                _routeController.highlightedVehicleId
+                            ? 64
+                            : 48,
                         alignment: Alignment.center,
                         child: LiveBusMarker(
                           color: _providerTheme.primary,
                           bearing: bus.position.bearing,
                           bearingIsExplicit: bus.position.bearingIsExplicit,
+                          isHighlighted: bus.publicVehicleId ==
+                              _routeController.highlightedVehicleId,
                           onTap: () => _onVehicleTap((
                             position: bus.position,
                             plate: bus.publicVehicleId,
@@ -436,6 +475,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                     onStopsList:
                         widget.route != null ? _openStopsList : null,
                     onSchedule: widget.route != null ? _openSchedule : null,
+                    onDepartureTap: _onDepartureTap,
                   ),
                 ),
                 // Stop-name bubble for the tapped marker (dismiss on outside
@@ -506,6 +546,15 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
               style: textTheme.titleSmall,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          // Star button
+          StarButton(
+            authService: AppServices.auth(context),
+            favouriteService: AppServices.favs(context),
+            providerId: widget.providerId,
+            type: 'stop',
+            stopId: widget.stopId,
+            defaultLabel: widget.stopName,
           ),
         ],
       ),

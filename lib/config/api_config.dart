@@ -8,7 +8,7 @@ class ApiConfig {
   /// Environment root. Must match a domain allowed in the Cloudflare Turnstile
   /// widget configuration (kept here so it can be overridden per environment).
   static const String prodBase =
-      'https://keepyoumoving-be.samsam123.name.my/prod/public';
+      'https://keepyoumoving-be.samsam123.name.my';
 
   /// Base for every public-transport endpoint (transit data).
   static const String publicTransportBase = '$prodBase/public-transport/';

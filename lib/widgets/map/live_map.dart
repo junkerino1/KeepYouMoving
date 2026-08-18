@@ -36,6 +36,7 @@ class LiveMap extends StatelessWidget {
       children: [
         TileLayer(
           urlTemplate: tileUrlTemplate,
+          retinaMode: RetinaMode.isHighDensity(context),
           userAgentPackageName: 'com.example.gtfs_rapid_flutter',
           additionalOptions: const {
             'attribution':

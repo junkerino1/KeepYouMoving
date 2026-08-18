@@ -20,18 +20,18 @@ class NearestStopMarker extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: Border.all(color: AppColors.white, width: 2),
-          boxShadow: const [
+          border: Border.all(color: AppColors.white, width: 2.5),
+          boxShadow: [
             BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 6,
-              offset: Offset(0, 2),
+              color: color.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
         child: const Icon(
           Icons.directions_bus_rounded,
-          size: 22,
+          size: 20,
           color: AppColors.white,
         ),
       ),

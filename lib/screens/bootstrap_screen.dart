@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/theme_controller.dart';
+import '../services/auth_service.dart';
 import '../services/bootstrap_service.dart';
+import '../services/favourite_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 
-/// Branded app-launch splash shown before the Home screen.
+/// Material 3 animated splash shown during app bootstrap.
 ///
-/// Renders immediately (no pre-`runApp` work), drives [BootstrapService], and
-/// shows honest progress copy plus a fake percentage. On failure it shows a
-/// recovery state with retry (never an infinite spinner); if Turnstile needs a
-/// visible challenge it shows one inline. Android back is blocked while
-/// bootstrap runs and only cancels an interactive challenge.
+/// Displays the RapidTransit KL branding, initialization progress,
+/// animated service status, and a recovery state if bootstrap fails.
 class BootstrapScreen extends StatefulWidget {
   const BootstrapScreen({
     super.key,
     required this.service,
     required this.themeController,
+    required this.authService,
+    required this.favouriteService,
   });
 
   final BootstrapService service;
   final ThemeController themeController;
+  final AuthService authService;
+  final FavouriteService favouriteService;
 
   @override
   State<BootstrapScreen> createState() => _BootstrapScreenState();
@@ -32,6 +35,7 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   @override
   void initState() {
     super.initState();
+
     widget.service.addListener(_onBootstrapChanged);
     widget.service.start();
   }
@@ -45,12 +49,31 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   void _onBootstrapChanged() {
     if (widget.service.status == BootstrapStatus.ready && !_navigated) {
       _navigated = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+
+        // Restore account session if available.
+        await widget.authService.restoreSession();
+
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) =>
-                HomeScreen(themeController: widget.themeController),
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => HomeScreen(
+              themeController: widget.themeController,
+              authService: widget.authService,
+              favouriteService: widget.favouriteService,
+            ),
+            transitionsBuilder: (_, animation, __, child) {
+              return FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                ),
+                child: child,
+              );
+            },
+            transitionDuration: const Duration(milliseconds: 500),
           ),
         );
       });
@@ -60,11 +83,10 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   @override
   Widget build(BuildContext context) {
     final service = widget.service;
+
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        // PopScope sits inside the builder so `canPop` tracks status changes
-        // (block back while running; allow exit once bootstrap has failed).
         return PopScope(
           canPop: service.status == BootstrapStatus.failed,
           child: Scaffold(
@@ -82,99 +104,141 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   }
 }
 
-/// The live splash: logo, restrained progress bar, and honest copy.
-class _RunningView extends StatelessWidget {
-  const _RunningView({required this.service});
+/// Main bootstrap view.
+class _RunningView extends StatefulWidget {
+  const _RunningView({
+    required this.service,
+  });
 
   final BootstrapService service;
+
+  @override
+  State<_RunningView> createState() => _RunningViewState();
+}
+
+class _RunningViewState extends State<_RunningView>
+    with TickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  late final AnimationController _shimmerController;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _shimmerController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final service = widget.service;
 
     return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SplashLogo(size: 128),
-              const SizedBox(height: 24),
-              Text(
-                'RapidTransit KL',
-                style: textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Kuala Lumpur transit, live',
-                style: textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 40),
-              _ProgressBar(progress: service.progress),
-              const SizedBox(height: 16),
-              Text(
-                service.statusMessage,
-                textAlign: TextAlign.center,
-                style: textTheme.bodyMedium,
-              ),
-            ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AnimatedLogo(
+            pulseController: _pulseController,
+            size: 80,
           ),
-        ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            service.statusMessage,
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
+
 }
 
-/// Smooth progress bar + fake percentage driven by [BootstrapService.progress].
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.progress});
+/// Logo with a subtle breathing glow.
+class _AnimatedLogo extends StatelessWidget {
+  const _AnimatedLogo({
+    required this.pulseController,
+    required this.size,
+  });
 
-  final double progress;
+  final AnimationController pulseController;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: progress),
-      duration: const Duration(milliseconds: 450),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        final percent = (value * 100).clamp(0, 100).round();
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: value,
-                minHeight: 6,
-                color: scheme.primary,
-                backgroundColor: scheme.surfaceContainerHighest,
+
+    return AnimatedBuilder(
+      animation: pulseController,
+      builder: (context, child) {
+        final t = pulseController.value;
+
+        final glowOpacity = 0.06 + (0.10 * t);
+        final glowScale = 1.0 + (0.12 * t);
+
+        return SizedBox(
+          width: size + 50,
+          height: size + 50,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(
+                scale: glowScale,
+                child: Container(
+                  width: size + 24,
+                  height: size + 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary.withValues(
+                      alpha: glowOpacity,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '$percent%',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ],
+
+              SplashLogo(
+                size: size,
+              ),
+            ],
+          ),
         );
       },
     );
   }
 }
 
-/// Clear recovery state: no spinner, an honest message, and a retry action.
+/// Recovery state shown if initialization fails.
 class _FailureView extends StatelessWidget {
-  const _FailureView({required this.service});
+  const _FailureView({
+    required this.service,
+  });
 
   final BootstrapService service;
 
@@ -185,60 +249,170 @@ class _FailureView extends StatelessWidget {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 28,
+          vertical: 32,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
+          constraints: const BoxConstraints(
+            maxWidth: 400,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.all(14),
+                width: 84,
+                height: 84,
                 decoration: BoxDecoration(
                   color: scheme.errorContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: Icon(
                   Icons.cloud_off_rounded,
-                  size: 32,
+                  size: 38,
                   color: scheme.onErrorContainer,
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Couldn’t prepare the app',
-                style:
-                    textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                service.errorMessage ?? 'Please try again.',
-                style: textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              if (service.failedStep != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Failed while: ${service.failedStep!.label}',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+
               const SizedBox(height: 24),
+
+              Text(
+                'We couldn\'t get things ready',
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 10),
+
+              Text(
+                'RapidTransit KL ran into a problem while '
+                    'preparing the app.',
+                style: textTheme.bodyMedium?.copyWith(
+                  height: 1.5,
+                  color: scheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 20),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 20,
+                          color: scheme.error,
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        Expanded(
+                          child: Text(
+                            service.errorMessage ??
+                                'An unexpected initialization '
+                                    'error occurred.',
+                            style: textTheme.bodySmall?.copyWith(
+                              height: 1.45,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (service.failedStep != null) ...[
+                      const SizedBox(height: 14),
+
+                      Divider(
+                        height: 1,
+                        color: scheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Text(
+                            'Failed during',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+
+                          const Spacer(),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.errorContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              service.failedStep!.label,
+                              style: textTheme.labelSmall?.copyWith(
+                                color: scheme.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 26),
+
               FilledButton.icon(
                 onPressed: service.retry,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Try again'),
+                icon: const Icon(
+                  Icons.refresh_rounded,
+                  size: 19,
+                ),
+                label: const Text(
+                  'Try again',
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(
+                    double.infinity,
+                    52,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
+
+              const SizedBox(height: 12),
+
               Text(
-                'You can also close and reopen the app.',
-                style: textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                'If the problem continues, close and reopen the app.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -249,10 +423,15 @@ class _FailureView extends StatelessWidget {
   }
 }
 
-/// App logo. Uses `assets/logo.png` when present; otherwise falls back to a
-/// programmatic navy bus-in-ring + red pin mark matching the brand identity.
+/// App logo.
+///
+/// Uses `assets/logo.png` when available, otherwise falls back to
+/// the built-in RapidTransit KL brand mark.
 class SplashLogo extends StatelessWidget {
-  const SplashLogo({super.key, this.size = 128});
+  const SplashLogo({
+    super.key,
+    this.size = 128,
+  });
 
   final double size;
 
@@ -263,21 +442,27 @@ class SplashLogo extends StatelessWidget {
       width: size,
       height: size,
       fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => _BrandMark(size: size),
+      errorBuilder: (_, __, ___) {
+        return _BrandMark(
+          size: size,
+        );
+      },
     );
   }
 }
 
-/// Drawn fallback logo: a navy ring around a bus, with a red map pin
-/// overlapping the top — a restrained nod to the attached logo.
+/// Fallback logo shown when assets/logo.png cannot be loaded.
 class _BrandMark extends StatelessWidget {
-  const _BrandMark({this.size = 128});
+  const _BrandMark({
+    this.size = 128,
+  });
 
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final navy = Theme.of(context).colorScheme.primary;
+    final primary = Theme.of(context).colorScheme.primary;
+
     return SizedBox(
       width: size,
       height: size,
@@ -289,19 +474,24 @@ class _BrandMark extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: navy, width: size * 0.045),
+              border: Border.all(
+                color: primary,
+                width: size * 0.04,
+              ),
             ),
           ),
+
           Icon(
             Icons.directions_bus_rounded,
-            size: size * 0.5,
-            color: navy,
+            size: size * 0.45,
+            color: primary,
           ),
+
           Positioned(
             top: size * 0.02,
             child: Icon(
               Icons.location_on_rounded,
-              size: size * 0.34,
+              size: size * 0.30,
               color: AppColors.red,
             ),
           ),
