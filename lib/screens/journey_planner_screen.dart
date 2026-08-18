@@ -191,6 +191,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
       _hasSearched = false;
     });
     try {
+      // External geocoding service; first-party auth headers do not apply.
       // Bias results towards KL area.
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/search'
@@ -395,6 +396,7 @@ class _JourneyPlannerScreenState extends State<JourneyPlannerScreen> {
 
   Future<List<LatLng>> _fetchWalkingRoute(LatLng from, LatLng to) async {
     try {
+      // External routing service; do not send first-party auth headers.
       final url = Uri.parse(
         'https://router.project-osrm.org/route/v1/foot/'
         '${from.longitude},${from.latitude};'

@@ -44,14 +44,19 @@ class AuthService extends ChangeNotifier {
       _handleIncomingLink,
       onError: (_) {},
     );
+    debugPrint('[auth] OAuth deep-link listener attached');
   }
 
   void _handleIncomingLink(Uri uri) {
+    debugPrint(
+        '[auth] deep link received: ${uri.scheme}://${uri.host}${uri.path}');
     if (uri.scheme.toLowerCase() != 'keepyoumoving' ||
         uri.host.toLowerCase() != 'oauth' ||
         uri.path != '/callback') {
+      debugPrint('[auth] deep link ignored: unsupported callback URI');
       return;
     }
+    debugPrint('[auth] OAuth callback accepted');
     unawaited(_handleOAuthCallback(uri));
   }
 
@@ -87,7 +92,9 @@ class AuthService extends ChangeNotifier {
     final code = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
     if (code == null || state == null) {
+      debugPrint('[auth] OAuth callback missing code or state');
       _error = 'Invalid sign-in response.';
+      _isLoading = false;
       notifyListeners();
       return;
     }
@@ -100,6 +107,8 @@ class AuthService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
+      await ApiService.waitForRequiredHeaders();
+      debugPrint('[auth] exchanging OAuth callback with backend');
       final response = await _api.postRoot(
         'account/oauth-callback',
         body: {'code': code, 'state': state},
