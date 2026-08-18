@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
+import '../controllers/route_controller.dart';
+import '../controllers/stop_controller.dart';
 import '../controllers/theme_controller.dart';
+import '../models/transit_route.dart';
+import '../models/transit_provider.dart';
 import '../services/auth_service.dart';
 import '../services/favourite_service.dart';
+import '../services/provider_repository.dart';
 import '../theme/app_theme.dart';
+import '../widgets/stops/provider_switcher.dart';
+import 'route_detail_screen.dart';
+import 'stop_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -21,6 +29,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  String? _openingFavouriteId;
+
   @override
   void initState() {
     super.initState();
@@ -453,8 +463,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final subtitle = routeInfo?['route_long_name'] as String? ??
         stopInfo?['stop_code'] as String? ??
         '';
+    final favouriteId = f['id'] as String? ?? '';
+    final isOpening = _openingFavouriteId == favouriteId;
 
     return ListTile(
+      onTap: isOpening ? null : () => _openFavourite(context, f),
       leading: Icon(
         type == 'route'
             ? Icons.directions_bus_rounded
@@ -471,13 +484,171 @@ class _ProfileScreenState extends State<ProfileScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis)
           : null,
-      trailing: IconButton(
-        icon: Icon(Icons.delete_outline_rounded,
-            size: 20, color: scheme.error),
-        tooltip: 'Delete',
-        onPressed: () => _deleteFavourite(context, f['id'] as String),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isOpening)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(Icons.chevron_right_rounded,
+                size: 22, color: scheme.onSurfaceVariant),
+          IconButton(
+            icon: Icon(Icons.delete_outline_rounded,
+                size: 20, color: scheme.error),
+            tooltip: 'Delete',
+            onPressed:
+                isOpening ? null : () => _deleteFavourite(context, favouriteId),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _openFavourite(
+      BuildContext context, Map<String, dynamic> favourite) async {
+    final favouriteId = favourite['id'] as String? ?? '';
+    if (favouriteId.isEmpty) return;
+    setState(() => _openingFavouriteId = favouriteId);
+
+    try {
+      final providerId = _parseInt(favourite['provider_id']);
+      if (providerId == null) {
+        throw StateError('Favourite has no provider');
+      }
+      final provider = await ProviderRepository().getProviderById(providerId);
+      if (!context.mounted) return;
+
+      final type = (favourite['type'] as String? ?? '').toLowerCase();
+      if (type == 'route') {
+        final route = _routeFromFavourite(favourite);
+        if (route == null) throw StateError('Favourite has no route');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RouteDetailScreen(
+              route: route,
+              providerId: providerId,
+              providerKey: provider?.providerKey,
+            ),
+          ),
+        );
+      } else if (type == 'stop') {
+        await _openStopFavourite(
+          context,
+          favourite,
+          providerId: providerId,
+          provider: provider,
+        );
+      } else {
+        throw StateError('Unsupported favourite type');
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this favourite.')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingFavouriteId = null);
+    }
+  }
+
+  Future<void> _openStopFavourite(
+    BuildContext context,
+    Map<String, dynamic> favourite, {
+    required int providerId,
+    required TransitProvider? provider,
+  }) async {
+    final entity = favourite['entity'] as Map<String, dynamic>?;
+    final stopInfo = entity?['stop'] as Map<String, dynamic>?;
+    final stopId = favourite['stop_id'] as String? ??
+        stopInfo?['stop_id'] as String? ??
+        '';
+    if (stopId.isEmpty) throw StateError('Favourite has no stop');
+
+    final stopController = StopController();
+    final routeController = RouteController();
+    try {
+      final routes = await stopController.loadRoutesForStop(
+        providerId: providerId,
+        stopId: stopId,
+      );
+      final route = routes.isEmpty ? null : routes.first;
+      var latitude = _parseDouble(stopInfo?['stop_lat']);
+      var longitude = _parseDouble(stopInfo?['stop_lon']);
+
+      // Favourite payloads may omit coordinates. Resolve them from the first
+      // serving route so the detail screen always opens at the real stop.
+      if (route != null && (latitude == null || longitude == null)) {
+        await routeController.loadRouteStops(
+          providerId: providerId,
+          routeId: route.routeId,
+        );
+        final routeStop = routeController.stops.firstWhere(
+          (stop) => stop.stopId == stopId,
+          orElse: () => throw StateError('Stop was not found on route'),
+        );
+        latitude = routeStop.stopLat;
+        longitude = routeStop.stopLon;
+      }
+
+      if (latitude == null || longitude == null) {
+        throw StateError('Favourite has no stop coordinates');
+      }
+
+      if (!context.mounted) return;
+      final stopName = stopInfo?['stop_name'] as String? ??
+          favourite['label'] as String? ??
+          'Stop';
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StopDetailScreen(
+            stopName: stopName,
+            stopLine: provider == null
+                ? 'Provider $providerId'
+                : providerShortLabel(provider),
+            latitude: latitude!,
+            longitude: longitude!,
+            stopId: stopId,
+            providerId: providerId,
+            providerKey: provider?.providerKey,
+            route: route,
+          ),
+        ),
+      );
+    } finally {
+      stopController.dispose();
+      routeController.dispose();
+    }
+  }
+
+  TransitRoute? _routeFromFavourite(Map<String, dynamic> favourite) {
+    final entity = favourite['entity'] as Map<String, dynamic>?;
+    final routeInfo = entity?['route'] as Map<String, dynamic>?;
+    final routeId = favourite['route_id'] as String? ??
+        routeInfo?['route_id'] as String? ??
+        '';
+    if (routeId.isEmpty) return null;
+    return TransitRoute(
+      routeId: routeId,
+      routeShortName: routeInfo?['route_short_name'] as String? ??
+          favourite['label'] as String? ??
+          routeId,
+      routeLongName: routeInfo?['route_long_name'] as String? ?? '',
+      routeType: routeInfo?['route_type'] as String? ?? '',
+    );
+  }
+
+  static int? _parseInt(Object? value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value as String? ?? '');
+  }
+
+  static double? _parseDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value as String? ?? '');
   }
 
   Widget _buildFavouritesSignedOut(BuildContext context) {
