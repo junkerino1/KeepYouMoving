@@ -22,6 +22,7 @@ class AuthService extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   StreamSubscription<Uri>? _linkSub;
+  String? _lastHandledCallback;
 
   Account? get account => _account;
   bool get isLoggedIn => _account != null;
@@ -42,9 +43,22 @@ class AuthService extends ChangeNotifier {
     final appLinks = AppLinks();
     _linkSub = appLinks.uriLinkStream.listen(
       _handleIncomingLink,
-      onError: (_) {},
+      onError: (Object error) =>
+          debugPrint('[auth] deep-link stream error: $error'),
     );
+    // uriLinkStream covers warm-app links, but Android may deliver the OAuth
+    // callback as the launch intent when the process was not running.
+    unawaited(_readInitialLink(appLinks));
     debugPrint('[auth] OAuth deep-link listener attached');
+  }
+
+  Future<void> _readInitialLink(AppLinks appLinks) async {
+    try {
+      final uri = await appLinks.getInitialLink();
+      if (uri != null) _handleIncomingLink(uri);
+    } catch (error) {
+      debugPrint('[auth] could not read initial deep link: $error');
+    }
   }
 
   void _handleIncomingLink(Uri uri) {
@@ -56,6 +70,12 @@ class AuthService extends ChangeNotifier {
       debugPrint('[auth] deep link ignored: unsupported callback URI');
       return;
     }
+    final callbackKey = uri.toString();
+    if (_lastHandledCallback == callbackKey) {
+      debugPrint('[auth] duplicate OAuth callback ignored');
+      return;
+    }
+    _lastHandledCallback = callbackKey;
     debugPrint('[auth] OAuth callback accepted');
     unawaited(_handleOAuthCallback(uri));
   }
