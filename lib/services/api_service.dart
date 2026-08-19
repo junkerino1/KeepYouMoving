@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
+
 import '../config/api_config.dart';
 
 /// Thin HTTP client for the RapidTransit KL backend.
@@ -39,6 +41,16 @@ class ApiService {
   static void setDeviceId(String? deviceId) {
     _deviceId = deviceId;
     _completeRequiredHeadersReady();
+  }
+
+  /// Stable installation ID used by media filenames and API headers.
+  static String get deviceId => _requireConfigured(_deviceId, 'device ID');
+
+  static String _requireConfigured(String? value, String name) {
+    if (value == null || value.isEmpty) {
+      throw StateError('Missing configured $name');
+    }
+    return value;
   }
 
   /// Configures the account bearer token for authenticated user endpoints.
@@ -191,5 +203,17 @@ class ApiService {
     );
     _logResponse(url, response.statusCode);
     return response;
+  }
+
+  /// Uploads bytes to a backend-authorized external URL (currently S3).
+  /// Only the headers returned with the presigned URL are sent; first-party
+  /// auth headers are already represented by the URL signature.
+  Future<http.Response> putExternal(
+    Uri url, {
+    required Uint8List bytes,
+    required Map<String, String> headers,
+  }) {
+    debugPrint('[api] PUT ${url.origin}${url.path} (presigned upload)');
+    return http.put(url, headers: headers, body: bytes);
   }
 }

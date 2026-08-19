@@ -3,11 +3,14 @@ import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account.dart';
 import '../models/session.dart';
 import 'api_service.dart';
+import 'app_metadata.dart';
 import 'secure_token_store.dart';
 
 class AuthService extends ChangeNotifier {
@@ -145,8 +148,9 @@ class AuthService extends ChangeNotifier {
       }
       await _store.writeAccountToken(accessToken);
       ApiService.setAccountToken(accessToken);
-      _account =
-          Account.fromJson(data['account'] as Map<String, dynamic>? ?? {});
+      _account = await _withProfilePicture(
+        Account.fromJson(data['account'] as Map<String, dynamic>? ?? {}),
+      );
       _isLoading = false;
       _error = null;
       notifyListeners();
@@ -172,10 +176,110 @@ class AuthService extends ChangeNotifier {
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final data = decoded['data'] as Map<String, dynamic>? ?? {};
-      _account =
-          Account.fromJson(data['account'] as Map<String, dynamic>? ?? {});
+      _account = await _withProfilePicture(
+        Account.fromJson(data['account'] as Map<String, dynamic>? ?? {}),
+      );
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<Account> _withProfilePicture(Account account) async {
+    final mediaId = account.profileMediaId;
+    if (mediaId == null || mediaId.isEmpty) return account;
+    final url = await getMediaDownloadUrl(mediaId);
+    return account.copyWith(profilePictureUrl: url);
+  }
+
+  /// Returns a short-lived download URL for a ready profile image.
+  Future<String?> getMediaDownloadUrl(String mediaId) async {
+    try {
+      final response = await _api.getRoot('media/$mediaId');
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = decoded['data'] as Map<String, dynamic>? ?? {};
+      return data['download_url'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Updates account fields and optionally uploads a new profile picture.
+  Future<bool> updateProfile({
+    required String fullName,
+    String? dateOfBirth,
+    XFile? profileImage,
+  }) async {
+    try {
+      String? mediaId = _account?.profileMediaId;
+      if (profileImage != null) {
+        mediaId = await _uploadProfilePicture(profileImage);
+        if (mediaId == null) return false;
+      }
+      final body = <String, dynamic>{
+        'full_name': fullName.trim(),
+        if (dateOfBirth != null && dateOfBirth.trim().isNotEmpty)
+          'date_of_birth': dateOfBirth.trim(),
+        if (mediaId != null && mediaId.isNotEmpty) 'profile_media_id': mediaId,
+      };
+      final response =
+          await _api.postRoot('account/update-details', body: body);
+      if (response.statusCode != 200) return false;
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = decoded['data'] as Map<String, dynamic>? ?? {};
+      final accountJson = data['account'] as Map<String, dynamic>? ?? {};
+      _account = await _withProfilePicture(Account.fromJson(accountJson));
+      notifyListeners();
+      return true;
+    } catch (error) {
+      debugPrint('[auth] profile update failed: $error');
+      return false;
+    }
+  }
+
+  Future<String?> _uploadProfilePicture(XFile file) async {
+    await AppMetadata.initialize();
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) return null;
+    final filename = file.name.isNotEmpty ? file.name : 'profile.jpg';
+    final contentType = lookupMimeType(filename, headerBytes: bytes);
+    if (contentType == null || !contentType.startsWith('image/')) return null;
+    final stampedFilename =
+        '${ApiService.deviceId}_${DateTime.now().millisecondsSinceEpoch}_$filename';
+    final authorize = await _api.postRoot(
+      'media/uploads',
+      body: {
+        'purpose': 'profile_picture',
+        'filename': stampedFilename,
+        'content_type': contentType,
+        'size_bytes': bytes.length,
+      },
+    );
+    if (authorize.statusCode != 201) return null;
+    final decoded = jsonDecode(authorize.body) as Map<String, dynamic>;
+    final data = decoded['data'] as Map<String, dynamic>? ?? {};
+    final media = data['media'] as Map<String, dynamic>? ?? {};
+    final upload = data['upload'] as Map<String, dynamic>? ?? {};
+    final mediaId = media['id'] as String?;
+    final uploadUrl = upload['url'] as String?;
+    if (mediaId == null || uploadUrl == null) return null;
+    final uploadHeaders = (upload['headers'] as Map<String, dynamic>? ?? {})
+        .map((key, value) => MapEntry(key, '$value'));
+    final uploaded = await _api.putExternal(
+      Uri.parse(uploadUrl),
+      bytes: bytes,
+      headers: uploadHeaders,
+    );
+    if (uploaded.statusCode < 200 || uploaded.statusCode >= 300) return null;
+    final complete = await _api.postRoot('media/uploads/$mediaId/complete');
+    if (complete.statusCode != 200) return null;
+    final completeJson = jsonDecode(complete.body) as Map<String, dynamic>;
+    final completeMedia =
+        (completeJson['data'] as Map<String, dynamic>?)?['media'];
+    if (completeMedia is! Map<String, dynamic> ||
+        completeMedia['state'] != 'ready') {
+      return null;
+    }
+    return mediaId;
   }
 
   /// Fetches the list of sessions for the current account.

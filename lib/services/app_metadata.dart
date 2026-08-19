@@ -7,7 +7,10 @@ class AppMetadata {
   AppMetadata._();
 
   static String deviceModel = '';
-  static String appVersion = '';
+
+  /// Mutable app-wide version sent to the backend and shown in the UI.
+  /// It can be overridden at build time with `--dart-define=APP_VERSION=...`.
+  static String appVersion = const String.fromEnvironment('APP_VERSION');
   static String platform = _resolvePlatform();
 
   static Future<void>? _initialization;
@@ -18,7 +21,9 @@ class AppMetadata {
 
   static Future<void> _load() async {
     platform = _resolvePlatform();
-    appVersion = (await PackageInfo.fromPlatform()).version;
+    if (appVersion.trim().isEmpty) {
+      appVersion = (await PackageInfo.fromPlatform()).version;
+    }
 
     final deviceInfo = DeviceInfoPlugin();
     if (kIsWeb) {

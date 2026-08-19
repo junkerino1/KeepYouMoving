@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../controllers/route_controller.dart';
 import '../controllers/stop_controller.dart';
 import '../controllers/theme_controller.dart';
@@ -6,9 +8,11 @@ import '../models/session.dart';
 import '../models/transit_route.dart';
 import '../models/transit_provider.dart';
 import '../services/auth_service.dart';
+import '../services/app_metadata.dart';
 import '../services/favourite_service.dart';
 import '../services/provider_repository.dart';
 import '../theme/app_theme.dart';
+import '../utils/format.dart';
 import '../widgets/stops/provider_switcher.dart';
 import 'route_detail_screen.dart';
 import 'stop_detail_screen.dart';
@@ -110,11 +114,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Row(
       children: [
-        if (account?.googlePictureUrl != null)
+        if (account?.profilePictureUrl != null ||
+            account?.googlePictureUrl != null)
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Image.network(
-              account!.googlePictureUrl!,
+              account!.profilePictureUrl ?? account.googlePictureUrl!,
               width: 48,
               height: 48,
               fit: BoxFit.cover,
@@ -242,10 +247,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 12),
             _infoRow(context, 'Name', account.fullName),
             _infoRow(context, 'Email', account.email),
+            if (account.dateOfBirth != null && account.dateOfBirth!.isNotEmpty)
+              _infoRow(context, 'Birthday', account.dateOfBirth!),
             if (account.lastLoginAt != null)
               _infoRow(
                   context, 'Last login', _formatDate(account.lastLoginAt!)),
             const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _editProfile(context),
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Edit profile'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              ),
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -782,7 +799,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ListTile(
             leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
             title: const Text('Version'),
-            trailing: Text('1.0.0', style: textTheme.labelMedium),
+            trailing:
+                Text(AppMetadata.appVersion, style: textTheme.labelMedium),
           ),
           const Divider(height: 1),
           ListTile(
@@ -817,10 +835,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} '
-        '${date.hour.toString().padLeft(2, '0')}:'
-        '${date.minute.toString().padLeft(2, '0')}';
+  String _formatDate(DateTime date) => formatLocalDateTime(date);
+
+  Future<void> _editProfile(BuildContext context) async {
+    final account = widget.authService.account;
+    if (account == null) return;
+    final result = await showDialog<_EditProfileResult>(
+      context: context,
+      builder: (_) => _EditProfileDialog(
+        initialFullName: account.fullName,
+        initialDateOfBirth: account.dateOfBirth ?? '',
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    final ok = await widget.authService.updateProfile(
+      fullName: result.fullName,
+      dateOfBirth:
+          result.dateOfBirth.isEmpty ? null : result.dateOfBirth,
+      profileImage: result.profileImage,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Profile updated.' : 'Could not update profile.'),
+      ),
+    );
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -881,6 +920,138 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _deleteFavourite(BuildContext context, String favId) async {
     await widget.favouriteService.deleteFavourite(favId);
+  }
+}
+
+class _EditProfileResult {
+  const _EditProfileResult({
+    required this.fullName,
+    required this.dateOfBirth,
+    required this.profileImage,
+  });
+
+  final String fullName;
+  final String dateOfBirth;
+  final XFile? profileImage;
+}
+
+class _EditProfileDialog extends StatefulWidget {
+  const _EditProfileDialog({
+    required this.initialFullName,
+    required this.initialDateOfBirth,
+  });
+
+  final String initialFullName;
+  final String initialDateOfBirth;
+
+  @override
+  State<_EditProfileDialog> createState() => _EditProfileDialogState();
+}
+
+class _EditProfileDialogState extends State<_EditProfileDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _dobController;
+  final ImagePicker _picker = ImagePicker();
+  XFile? _pickedImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialFullName);
+    _dobController = TextEditingController(text: widget.initialDateOfBirth);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _dobController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectDate() async {
+    final initial =
+        DateTime.tryParse(_dobController.text) ?? DateTime(2000, 1, 1);
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) return;
+    _dobController.text = '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _selectImage() async {
+    final image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (image == null || !mounted) return;
+    setState(() => _pickedImage = image);
+  }
+
+  void _save() {
+    final fullName = _nameController.text.trim();
+    if (fullName.isEmpty) return;
+    Navigator.of(context).pop(
+      _EditProfileResult(
+        fullName: fullName,
+        dateOfBirth: _dobController.text.trim(),
+        profileImage: _pickedImage,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit profile'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Full name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _dobController,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Date of birth',
+                hintText: 'YYYY-MM-DD',
+                suffixIcon: Icon(Icons.calendar_month_rounded),
+              ),
+              onTap: _selectDate,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _selectImage,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: Text(
+                _pickedImage == null
+                    ? 'Choose profile picture'
+                    : 'Picture selected',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 
