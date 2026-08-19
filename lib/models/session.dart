@@ -1,6 +1,8 @@
 /// Model for an account session returned by the backend.
 library;
 
+import '../utils/format.dart';
+
 class AccountSession {
   final String id;
   final String name;
@@ -29,13 +31,13 @@ class AccountSession {
           ? SessionDevice.fromJson(device)
           : null,
       lastUsedAt: json['last_used_at'] != null
-          ? DateTime.tryParse(json['last_used_at'] as String)
+          ? parseUtcToLocal(json['last_used_at'])
           : null,
       expiresAt: json['expires_at'] != null
-          ? DateTime.tryParse(json['expires_at'] as String)
+          ? parseUtcToLocal(json['expires_at'])
           : null,
       revokedAt: json['revoked_at'] != null
-          ? DateTime.tryParse(json['revoked_at'] as String)
+          ? parseUtcToLocal(json['revoked_at'])
           : null,
       isCurrent: json['is_current'] as bool? ?? false,
     );
@@ -46,19 +48,25 @@ class AccountSession {
 
 class SessionDevice {
   final String id;
+  final String installationId;
   final String platform;
+  final String deviceModel;
   final String appVersion;
 
   const SessionDevice({
     required this.id,
+    required this.installationId,
     required this.platform,
+    required this.deviceModel,
     required this.appVersion,
   });
 
   factory SessionDevice.fromJson(Map<String, dynamic> json) {
     return SessionDevice(
       id: json['id'] as String? ?? '',
+      installationId: json['installation_id'] as String? ?? '',
       platform: json['platform'] as String? ?? '',
+      deviceModel: json['device_model'] as String? ?? '',
       appVersion: json['app_version'] as String? ?? '',
     );
   }

@@ -18,6 +18,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to show nearby bus stops and center the map around you.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Your photo library is used when you choose a profile picture.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

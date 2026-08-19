@@ -3,6 +3,35 @@ library;
 
 import 'package:flutter/material.dart';
 
+/// Parses an API timestamp as UTC and converts it to the user's local time.
+/// Account/session endpoints return UTC; public transport payloads have their
+/// own local-time fields and should not use this helper.
+DateTime? parseUtcToLocal(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return null;
+  final utc = parsed.isUtc
+      ? parsed
+      : DateTime.utc(
+          parsed.year,
+          parsed.month,
+          parsed.day,
+          parsed.hour,
+          parsed.minute,
+          parsed.second,
+          parsed.millisecond,
+          parsed.microsecond,
+        );
+  return utc.toLocal();
+}
+
+String formatLocalDateTime(DateTime date) {
+  final local = date.toLocal();
+  return '${local.day}/${local.month}/${local.year} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
+}
+
 /// Formats a distance in meters as a compact label (`52 m`, `1.2 km`).
 String formatDistance(double meters) {
   if (meters < 1000) return '${meters.round()} m';
