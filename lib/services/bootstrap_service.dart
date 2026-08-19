@@ -4,6 +4,7 @@ import 'package:cloudflare_turnstile/cloudflare_turnstile.dart';
 import 'package:flutter/foundation.dart';
 
 import 'api_service.dart';
+import 'app_metadata.dart';
 import 'device_identity.dart';
 import 'pow_token_service.dart';
 import 'provider_repository.dart';
@@ -105,6 +106,7 @@ class BootstrapService extends ChangeNotifier {
 
       // 2. Device identity.
       _beginStep(BootstrapStep.device, 0.20, 'Preparing your device…');
+      await AppMetadata.initialize();
       final deviceId = await _identity.ensureDeviceId();
       // Make the device ID available to every transit request header.
       ApiService.setDeviceId(deviceId);

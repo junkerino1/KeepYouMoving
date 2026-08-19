@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../config/api_config.dart';
 import 'api_service.dart';
+import 'app_metadata.dart';
 import 'secure_token_store.dart';
 import 'turnstile_service.dart';
 
@@ -94,19 +94,21 @@ class PowTokenService {
     String deviceId, {
     required String turnstileToken,
   }) async {
-    final appVersion = await _appVersion();
+    await AppMetadata.initialize();
     final body = {
       'turnstile_token': turnstileToken,
       'device_id': deviceId,
-      'platform': _platformName,
-      'app_version': appVersion,
+      'platform': AppMetadata.platform,
+      'device_model': AppMetadata.deviceModel,
+      'app_version': AppMetadata.appVersion,
     };
     // Debug breadcrumb: log the exchange request. The Turnstile token is a
     // one-time credential and is deliberately redacted (never logged).
     debugPrint('[pow-token] POST ${ApiConfig.securityBase}'
         '${ApiConfig.powTokenEndpoint} '
-        '{device_id: $deviceId, platform: $_platformName, '
-        'app_version: $appVersion, turnstile_token: $turnstileToken}');
+        '{device_id: $deviceId, platform: ${AppMetadata.platform}, '
+        'device_model: ${AppMetadata.deviceModel}, '
+        'app_version: ${AppMetadata.appVersion}, turnstile_token: [redacted]}');
     final response = await _api.postSecurity(
       ApiConfig.powTokenEndpoint,
       body: body,
@@ -118,7 +120,6 @@ class PowTokenService {
         'PoW exchange failed (HTTP ${response.statusCode}).',
       );
       // Output whole JSON
-
     }
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final data = decoded['data'] as Map<String, dynamic>?;
@@ -135,28 +136,5 @@ class PowTokenService {
     final pow = PowToken(token: token, expiresAt: resolvedExpiry);
     await _store.writePowToken(token, expiresAt: resolvedExpiry);
     return pow;
-  }
-
-  /// Human-readable runtime platform for the `platform` body field.
-  static String get _platformName {
-    if (kIsWeb) return 'web';
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.android => 'android',
-      TargetPlatform.iOS => 'ios',
-      TargetPlatform.windows => 'windows',
-      TargetPlatform.macOS => 'macos',
-      TargetPlatform.linux => 'linux',
-      TargetPlatform.fuchsia => 'fuchsia',
-    };
-  }
-
-  static String? _cachedAppVersion;
-
-  Future<String> _appVersion() async {
-    final cached = _cachedAppVersion;
-    if (cached != null) return cached;
-    final info = await PackageInfo.fromPlatform();
-    // Matches the backend's `app_version` format (e.g. "1.0.0" — no build).
-    return _cachedAppVersion = info.version;
   }
 }

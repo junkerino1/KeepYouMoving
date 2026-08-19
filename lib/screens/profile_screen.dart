@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../controllers/route_controller.dart';
 import '../controllers/stop_controller.dart';
 import '../controllers/theme_controller.dart';
+import '../models/session.dart';
 import '../models/transit_route.dart';
 import '../models/transit_provider.dart';
 import '../services/auth_service.dart';
@@ -29,13 +30,18 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  static const int _sessionsPerPage = 3;
+
   String? _openingFavouriteId;
+  Future<List<AccountSession>>? _sessionsFuture;
+  int _sessionPage = 0;
 
   @override
   void initState() {
     super.initState();
     widget.authService.addListener(_onAuthChanged);
     if (widget.authService.isLoggedIn) {
+      _sessionsFuture = widget.authService.fetchSessions();
       widget.favouriteService.loadFavourites();
     }
   }
@@ -47,7 +53,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _onAuthChanged() {
-    setState(() {});
+    setState(() {
+      _sessionPage = 0;
+      _sessionsFuture = widget.authService.isLoggedIn
+          ? widget.authService.fetchSessions()
+          : null;
+    });
     if (widget.authService.isLoggedIn) {
       widget.favouriteService.loadFavourites();
     }
@@ -164,14 +175,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Icon(Icons.login_rounded, size: 36, color: scheme.primary),
             const SizedBox(height: 12),
-            Text('Sign in to sync your data',
-                style: textTheme.titleSmall),
+            Text('Sign in to sync your data', style: textTheme.titleSmall),
             const SizedBox(height: 6),
             Text(
               'Save favourites, access from multiple devices, and more.',
               textAlign: TextAlign.center,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style:
+                  textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -188,9 +198,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.login_rounded, size: 18),
-                label: Text(isLoading
-                    ? 'Opening browser...'
-                    : 'Sign in with Google'),
+                label: Text(
+                    isLoading ? 'Opening browser...' : 'Sign in with Google'),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 48),
                 ),
@@ -200,8 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 12),
               Text(
                 widget.authService.error!,
-                style: textTheme.bodySmall
-                    ?.copyWith(color: scheme.error),
+                style: textTheme.bodySmall?.copyWith(color: scheme.error),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -235,8 +243,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _infoRow(context, 'Name', account.fullName),
             _infoRow(context, 'Email', account.email),
             if (account.lastLoginAt != null)
-              _infoRow(context, 'Last login',
-                  _formatDate(account.lastLoginAt!)),
+              _infoRow(
+                  context, 'Last login', _formatDate(account.lastLoginAt!)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -264,7 +272,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Card(
       margin: EdgeInsets.zero,
       child: FutureBuilder(
-        future: widget.authService.fetchSessions(),
+        future: _sessionsFuture ??= widget.authService.fetchSessions(),
         builder: (context, snapshot) {
           final sessions = snapshot.data ?? [];
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -279,6 +287,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             );
           }
+          final pageCount = sessions.isEmpty
+              ? 1
+              : (sessions.length / _sessionsPerPage).ceil();
+          final currentPage = _sessionPage.clamp(0, pageCount - 1);
+          final pageStart = currentPage * _sessionsPerPage;
+          final pageSessions = sessions
+              .skip(pageStart)
+              .take(_sessionsPerPage)
+              .toList(growable: false);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -291,12 +308,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(width: 10),
                     Text('Sessions', style: textTheme.titleSmall),
                     const Spacer(),
-                    Text('${sessions.length}',
-                        style: textTheme.labelMedium),
+                    Text('${sessions.length}', style: textTheme.labelMedium),
                   ],
                 ),
               ),
-              for (final session in sessions) ...[
+              for (final session in pageSessions) ...[
                 const Divider(height: 1),
                 Padding(
                   padding:
@@ -319,10 +335,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           children: [
                             Row(
                               children: [
-                                Text(session.name,
+                                Flexible(
+                                  child: Text(
+                                    session.device?.deviceModel.isNotEmpty ==
+                                            true
+                                        ? session.device!.deviceModel
+                                        : session.name,
                                     style: textTheme.bodyMedium?.copyWith(
                                       fontWeight: FontWeight.w500,
-                                    )),
+                                    ),
+                                  ),
+                                ),
                                 if (session.isCurrent) ...[
                                   const SizedBox(width: 8),
                                   Container(
@@ -330,12 +353,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: AppColors.emeraldDark,
-                                      borderRadius:
-                                          BorderRadius.circular(4),
+                                      borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text('Current',
-                                        style: textTheme.labelSmall
-                                            ?.copyWith(
+                                        style: textTheme.labelSmall?.copyWith(
                                           color: Colors.white,
                                           fontSize: 10,
                                         )),
@@ -344,8 +365,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 if (session.isRevoked) ...[
                                   const SizedBox(width: 8),
                                   Text('Revoked',
-                                      style: textTheme.labelSmall
-                                          ?.copyWith(
+                                      style: textTheme.labelSmall?.copyWith(
                                         color: scheme.error,
                                       )),
                                 ],
@@ -356,6 +376,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 'Last used: ${_formatDate(session.lastUsedAt!)}',
                                 style: textTheme.bodySmall,
                               ),
+                            if (session.device != null)
+                              Text(
+                                '${session.device!.platform} ${session.device!.appVersion}',
+                                style: textTheme.bodySmall,
+                              ),
                           ],
                         ),
                       ),
@@ -364,8 +389,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           icon: Icon(Icons.block_rounded,
                               size: 18, color: scheme.error),
                           tooltip: 'Revoke',
-                          onPressed: () =>
-                              _revokeSession(context, session.id),
+                          onPressed: () => _revokeSession(context, session.id),
                         ),
                     ],
                   ),
@@ -375,10 +399,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Center(
-                    child: Text('No active sessions',
-                        style: textTheme.bodySmall),
+                    child:
+                        Text('No active sessions', style: textTheme.bodySmall),
                   ),
                 ),
+              if (sessions.length > _sessionsPerPage) ...[
+                const Divider(height: 1),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        onPressed: currentPage > 0
+                            ? () => setState(() => _sessionPage--)
+                            : null,
+                        icon: const Icon(Icons.chevron_left_rounded),
+                        tooltip: 'Previous page',
+                      ),
+                      Text('${currentPage + 1} / $pageCount',
+                          style: textTheme.labelMedium),
+                      IconButton(
+                        onPressed: currentPage < pageCount - 1
+                            ? () => setState(() => _sessionPage++)
+                            : null,
+                        icon: const Icon(Icons.chevron_right_rounded),
+                        tooltip: 'Next page',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           );
         },
@@ -419,8 +471,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Icon(Icons.bookmark_border_rounded,
                       size: 28, color: scheme.onSurfaceVariant),
                   const SizedBox(height: 8),
-                  Text('No favourites yet',
-                      style: textTheme.bodyMedium),
+                  Text('No favourites yet', style: textTheme.bodyMedium),
                   const SizedBox(height: 4),
                   Text(
                     'Star a stop or route to save it here.',
@@ -663,8 +714,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Icon(Icons.bookmark_border_rounded,
                 size: 28, color: scheme.onSurfaceVariant),
             const SizedBox(height: 8),
-            Text('Sign in to save favourites',
-                style: textTheme.bodyMedium),
+            Text('Sign in to save favourites', style: textTheme.bodyMedium),
             const SizedBox(height: 4),
             Text(
               'Star stops and routes to quickly access them later.',
@@ -730,8 +780,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         children: [
           ListTile(
-            leading:
-                Icon(Icons.info_outline_rounded, color: scheme.primary),
+            leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
             title: const Text('Version'),
             trailing: Text('1.0.0', style: textTheme.labelMedium),
           ),
@@ -779,7 +828,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text('You will need to sign in again to access your account.'),
+        content: const Text(
+            'You will need to sign in again to access your account.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -800,14 +850,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _revokeSession(
-      BuildContext context, String sessionId) async {
+  Future<void> _revokeSession(BuildContext context, String sessionId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Revoke session?'),
-        content: const Text(
-            'This device will be signed out immediately.'),
+        content: const Text('This device will be signed out immediately.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -825,12 +873,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (confirmed == true) {
       await widget.authService.revokeSession(sessionId);
-      setState(() {});
+      setState(() {
+        _sessionsFuture = widget.authService.fetchSessions();
+      });
     }
   }
 
-  Future<void> _deleteFavourite(
-      BuildContext context, String favId) async {
+  Future<void> _deleteFavourite(BuildContext context, String favId) async {
     await widget.favouriteService.deleteFavourite(favId);
   }
 }
