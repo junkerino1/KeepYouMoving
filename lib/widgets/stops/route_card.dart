@@ -45,15 +45,15 @@ class RouteCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (route.routeType.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        _routeTypeLabel(route.routeType),
-                        style: textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                    // if (route.routeType.isNotEmpty) ...[
+                    //   const SizedBox(height: 3),
+                    //   Text(
+                    //     _routeTypeLabel(route.routeType),
+                    //     style: textTheme.labelSmall?.copyWith(
+                    //       color: scheme.onSurfaceVariant,
+                    //     ),
+                    //   ),
+                    // ],
                   ],
                 ),
               ),
@@ -67,18 +67,18 @@ class RouteCard extends StatelessWidget {
     );
   }
 
-  String _routeTypeLabel(String type) {
-    switch (type) {
-      case '3':
-        return 'Bus';
-      case '1':
-        return 'MRT';
-      case '0':
-        return 'LRT';
-      case '2':
-        return 'Monorail';
-      default:
-        return 'Transit';
-    }
-  }
+  // String _routeTypeLabel(String type) {
+  //   switch (type) {
+  //     case '3':
+  //       return 'Bus';
+  //     case '1':
+  //       return 'MRT';
+  //     case '0':
+  //       return 'LRT';
+  //     case '2':
+  //       return 'Monorail';
+  //     default:
+  //       return 'Transit';
+  //   }
+  // }
 }

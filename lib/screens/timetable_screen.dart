@@ -4,6 +4,7 @@ import '../controllers/timetable_controller.dart';
 import '../models/route_stop.dart';
 import '../models/transit_route.dart';
 import '../theme/app_theme.dart';
+import '../widgets/stops/provider_switcher.dart';
 import '../widgets/stops/route_color_badge.dart';
 import 'stop_detail_screen.dart';
 
@@ -295,8 +296,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     }
     if (_controller.isLoading) {
       return Center(
-        child: CircularProgressIndicator(
-            strokeWidth: 2, color: scheme.primary),
+        child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
       );
     }
     if (schedule == null) {
@@ -306,8 +306,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
           child: Text(
             _emptyMessage(),
             textAlign: TextAlign.center,
-            style: textTheme.bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            style:
+                textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
       );
@@ -325,8 +325,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
       return Center(
         child: Text(
           'No scheduled departures for this stop.',
-          style:
-              textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
       );
     }
@@ -417,10 +416,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
                   // times are deliberately much lighter.
                   Text(
                     _formatTime(times[index]),
-                    style: (isNext
-                            ? textTheme.titleLarge
-                            : textTheme.titleMedium)
-                        ?.copyWith(
+                    style:
+                        (isNext ? textTheme.titleLarge : textTheme.titleMedium)
+                            ?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: isNext
                           ? scheme.primary
@@ -473,8 +471,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
             Text(
               'Pick another stop or route to keep browsing.',
               textAlign: TextAlign.center,
-              style: textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style:
+                  textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -489,8 +487,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded,
-                size: 28, color: scheme.error),
+            Icon(Icons.error_outline_rounded, size: 28, color: scheme.error),
             const SizedBox(height: 8),
             Text(
               _controller.errorMessage!,
@@ -513,83 +510,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// Provider toggle, matching the Routes screen's filter chips exactly.
+  /// Provider toggle using the shared ProviderSwitcher widget.
   Widget _buildProviderFilters() {
-    final rapidKlTheme = ProviderTheme.of('rapid_bus_kl');
-    final feederTheme = ProviderTheme.of('rapid_bus_mrtfeeder');
-    return Row(
-      children: [
-        Expanded(
-          child: _buildFilterChip(
-            label: 'Rapid KL',
-            isSelected:
-                _controller.selectedProvider?.providerKey == 'rapid_bus_kl',
-            selectedColor: rapidKlTheme.primary,
-            dotColor: rapidKlTheme.primary,
-            onTap: () => _controller
-                .selectProvider(_controller.providerByKey('rapid_bus_kl')),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildFilterChip(
-            label: 'MRT Feeder',
-            isSelected: _controller.selectedProvider?.providerKey ==
-                'rapid_bus_mrtfeeder',
-            selectedColor: feederTheme.primary,
-            dotColor: feederTheme.primary,
-            onTap: () => _controller.selectProvider(
-                _controller.providerByKey('rapid_bus_mrtfeeder')),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required bool isSelected,
-    required Color selectedColor,
-    required Color dotColor,
-    required VoidCallback onTap,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: isSelected ? selectedColor : scheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isSelected ? Colors.white : dotColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected
-                          ? Colors.white
-                          : scheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ProviderSwitcher(
+      providers: _controller.providers,
+      selectedProvider: _controller.selectedProvider,
+      onSelected: _controller.selectProvider,
     );
   }
 
@@ -622,8 +548,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                       onSelected: onChanged,
                     ),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: scheme.outlineVariant),
@@ -721,17 +646,16 @@ class _TimetableScreenState extends State<TimetableScreen> {
                               itemCount: filtered.length,
                               itemBuilder: (context, index) {
                                 final option = filtered[index];
-                                final selected =
-                                    option.value == selectedValue;
+                                final selected = option.value == selectedValue;
                                 return ListTile(
                                   title: option.routeBadge != null
                                       ? Row(
                                           children: [
                                             RouteColorBadge(
                                               shortName: option.routeBadge!,
-                                              theme: ProviderTheme.of(_controller
-                                                  .selectedProvider
-                                                  ?.providerKey),
+                                              theme: ProviderTheme.of(
+                                                  _controller.selectedProvider
+                                                      ?.providerKey),
                                               fontSize: 12,
                                               iconSize: 12,
                                             ),
@@ -755,8 +679,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
                                       ? Icon(Icons.check_rounded,
                                           size: 18, color: scheme.primary)
                                       : null,
-                                  onTap: () => Navigator.of(sheetContext)
-                                      .pop(option),
+                                  onTap: () =>
+                                      Navigator.of(sheetContext).pop(option),
                                 );
                               },
                             ),

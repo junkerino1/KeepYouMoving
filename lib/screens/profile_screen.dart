@@ -7,8 +7,8 @@ import '../controllers/theme_controller.dart';
 import '../models/session.dart';
 import '../models/transit_route.dart';
 import '../models/transit_provider.dart';
-import '../services/auth_service.dart';
 import '../services/app_metadata.dart';
+import '../services/auth_service.dart';
 import '../services/favourite_service.dart';
 import '../services/provider_repository.dart';
 import '../theme/app_theme.dart';
@@ -76,94 +76,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       children: [
-        // Header
+        // Profile header (centered avatar + edit icon + name/email).
         _buildHeader(context),
         const SizedBox(height: 24),
 
-        // Account section
+        // Sign-in prompt for signed-out users.
         if (!isLoggedIn) ...[
           _buildSignInCard(context),
-        ] else ...[
-          _buildAccountCard(context),
           const SizedBox(height: 20),
-          _buildSessionsSection(context),
         ],
 
-        const SizedBox(height: 20),
-        const _SectionHeader('Favourites'),
+        // Favourites.
+        const _SectionHeader('Favourites', icon: Icons.star_rounded),
         if (isLoggedIn)
           _buildFavouritesSection(context)
         else
           _buildFavouritesSignedOut(context),
 
         const SizedBox(height: 20),
-        const _SectionHeader('Appearance'),
+        // Appearance.
+        const _SectionHeader('Theme', icon: Icons.palette_rounded),
         _buildThemeCard(context),
 
-        const SizedBox(height: 20),
-        const _SectionHeader('About'),
-        _buildAboutCard(context),
+        // Account-only sections.
+        if (isLoggedIn) ...[
+          const SizedBox(height: 20),
+          _buildSessionsSection(context),
+          const SizedBox(height: 20),
+          // About (version).
+          const _SectionHeader('About', icon: Icons.info_outline_rounded),
+          _buildAboutCard(context),
+          const SizedBox(height: 20),
+          _buildSignOutItem(context),
+        ],
       ],
     );
   }
 
+  /// Profile header: a larger centered avatar with a small edit icon overlaid
+  /// on its bottom-right corner, and the name/email beneath it.
   Widget _buildHeader(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final account = widget.authService.account;
 
-    return Row(
+    return Column(
       children: [
-        if (account?.profilePictureUrl != null ||
-            account?.googlePictureUrl != null)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Image.network(
-              account!.profilePictureUrl ?? account.googlePictureUrl!,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(16),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (account?.profilePictureUrl != null ||
+                account?.googlePictureUrl != null)
+              ClipOval(
+                child: Image.network(
+                  account!.profilePictureUrl ?? account.googlePictureUrl!,
+                  width: 160,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      _buildAvatarFallback(context, Icons.person_rounded),
                 ),
-                child: Icon(Icons.person_rounded,
-                    size: 24, color: scheme.onPrimary),
+              )
+            else
+              _buildAvatarFallback(context, Icons.directions_bus_rounded),
+            // Edit icon at the bottom-right of the avatar (same action as the
+            // old Edit-profile button).
+            if (account != null)
+              Positioned(
+                right: 6,
+                bottom: 6,
+                child: Material(
+                  color: scheme.primary,
+                  shape: const CircleBorder(),
+                  elevation: 2,
+                  child: InkWell(
+                    onTap: () => _editProfile(context),
+                    customBorder: const CircleBorder(),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Icon(Icons.edit_rounded,
+                          size: 24, color: scheme.onPrimary),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: scheme.primary,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(Icons.directions_bus_rounded,
-                size: 28, color: scheme.onPrimary),
-          ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                account?.fullName ?? 'RapidTransit KL',
-                style: textTheme.titleLarge,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                account?.email ?? 'Your transit companion',
-                style: textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          account?.fullName ?? 'RapidTransit KL',
+          style: textTheme.titleLarge,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          account?.email ?? 'Your transit companion',
+          style: textTheme.bodySmall,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
+    );
+  }
+
+  /// Centered fallback avatar: a circle with [icon] on the primary color.
+  Widget _buildAvatarFallback(BuildContext context, IconData icon) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, size: 56, color: scheme.onPrimary),
+    );
+  }
+
+  /// Bottom menu item that signs the user out (red, filled).
+  Widget _buildSignOutItem(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      color: scheme.errorContainer,
+      child: ListTile(
+        leading: Icon(Icons.logout_rounded, color: scheme.onErrorContainer),
+        title: Text(
+          'Sign out',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: scheme.onErrorContainer, fontWeight: FontWeight.w600),
+        ),
+        trailing:
+            Icon(Icons.chevron_right_rounded, color: scheme.onErrorContainer),
+        onTap: () => _confirmLogout(context),
+      ),
+    );
+  }
+
+  /// About card: shows the app version.
+  Widget _buildAboutCard(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
+        title: const Text('Version'),
+        trailing: Text(AppMetadata.appVersion, style: textTheme.labelMedium),
+      ),
     );
   }
 
@@ -224,74 +285,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildAccountCard(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final account = widget.authService.account!;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+  Widget _buildSessionsSection(BuildContext context) {
+    return FutureBuilder(
+      future: _sessionsFuture ??= widget.authService.fetchSessions(),
+      builder: (context, snapshot) {
+        final sessions = snapshot.data ?? [];
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(Icons.account_circle_rounded,
-                    size: 20, color: scheme.primary),
-                const SizedBox(width: 10),
-                Text('Account', style: textTheme.titleSmall),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _infoRow(context, 'Name', account.fullName),
-            _infoRow(context, 'Email', account.email),
-            if (account.dateOfBirth != null && account.dateOfBirth!.isNotEmpty)
-              _infoRow(context, 'Birthday', account.dateOfBirth!),
-            if (account.lastLoginAt != null)
-              _infoRow(
-                  context, 'Last login', _formatDate(account.lastLoginAt!)),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _editProfile(context),
-                icon: const Icon(Icons.edit_rounded, size: 18),
-                label: const Text('Edit profile'),
-                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
-              ),
+            // Section header with a count bracket (e.g. "SESSIONS (3)").
+            _SectionHeader(
+              'Sessions',
+              icon: Icons.devices_rounded,
+              count: snapshot.hasData && sessions.isNotEmpty
+                  ? sessions.length
+                  : null,
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _confirmLogout(context),
-                icon: const Icon(Icons.logout_rounded, size: 18),
-                label: const Text('Sign out'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  foregroundColor: scheme.error,
-                  side: BorderSide(color: scheme.error),
-                ),
-              ),
-            ),
+            _buildSessionsCard(context, snapshot, sessions),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildSessionsSection(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget _buildSessionsCard(
+    BuildContext context,
+    AsyncSnapshot<List<AccountSession>> snapshot,
+    List<AccountSession> sessions,
+  ) {
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Card(
       margin: EdgeInsets.zero,
-      child: FutureBuilder(
-        future: _sessionsFuture ??= widget.authService.fetchSessions(),
-        builder: (context, snapshot) {
-          final sessions = snapshot.data ?? [];
+      child: Builder(
+        builder: (context) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Padding(
               padding: EdgeInsets.all(20),
@@ -316,99 +345,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.devices_rounded,
-                        size: 20, color: scheme.primary),
-                    const SizedBox(width: 10),
-                    Text('Sessions', style: textTheme.titleSmall),
-                    const Spacer(),
-                    Text('${sessions.length}', style: textTheme.labelMedium),
-                  ],
-                ),
-              ),
-              for (final session in pageSessions) ...[
-                const Divider(height: 1),
+              for (int i = 0; i < pageSessions.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Row(
-                    children: [
-                      Icon(
-                        session.isCurrent
-                            ? Icons.phone_android_rounded
-                            : Icons.phone_iphone_rounded,
-                        size: 20,
-                        color: session.isRevoked
-                            ? scheme.onSurfaceVariant
-                            : scheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                  child: Builder(
+                    builder: (context) {
+                      final session = pageSessions[i];
+                      return Row(
+                        children: [
+                          Icon(
+                            session.isCurrent
+                                ? Icons.phone_android_rounded
+                                : Icons.phone_iphone_rounded,
+                            size: 20,
+                            color: session.isRevoked
+                                ? scheme.onSurfaceVariant
+                                : scheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Flexible(
-                                  child: Text(
-                                    session.device?.deviceModel.isNotEmpty ==
-                                            true
-                                        ? session.device!.deviceModel
-                                        : session.name,
-                                    style: textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w500,
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        session.device?.deviceModel
+                                                    .isNotEmpty ==
+                                                true
+                                            ? session.device!.deviceModel
+                                            : session.name,
+                                        style: textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                    if (session.isCurrent) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.emeraldDark,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text('Current',
+                                            style:
+                                                textTheme.labelSmall?.copyWith(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                            )),
+                                      ),
+                                    ],
+                                    if (session.isRevoked) ...[
+                                      const SizedBox(width: 8),
+                                      Text('Revoked',
+                                          style: textTheme.labelSmall?.copyWith(
+                                            color: scheme.error,
+                                          )),
+                                    ],
+                                  ],
                                 ),
-                                if (session.isCurrent) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.emeraldDark,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text('Current',
-                                        style: textTheme.labelSmall?.copyWith(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                        )),
+                                if (session.lastUsedAt != null)
+                                  Text(
+                                    'Last used: ${_formatDate(session.lastUsedAt!)}',
+                                    style: textTheme.bodySmall
+                                        ?.copyWith(height: 1.4),
                                   ),
-                                ],
-                                if (session.isRevoked) ...[
-                                  const SizedBox(width: 8),
-                                  Text('Revoked',
-                                      style: textTheme.labelSmall?.copyWith(
-                                        color: scheme.error,
-                                      )),
-                                ],
+                                if (session.device != null)
+                                  Text(
+                                    '${session.device!.platform} ${session.device!.appVersion}',
+                                    style: textTheme.bodySmall
+                                        ?.copyWith(height: 1.4),
+                                  ),
                               ],
                             ),
-                            if (session.lastUsedAt != null)
-                              Text(
-                                'Last used: ${_formatDate(session.lastUsedAt!)}',
-                                style: textTheme.bodySmall,
-                              ),
-                            if (session.device != null)
-                              Text(
-                                '${session.device!.platform} ${session.device!.appVersion}',
-                                style: textTheme.bodySmall,
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (!session.isCurrent && !session.isRevoked)
-                        IconButton(
-                          icon: Icon(Icons.block_rounded,
-                              size: 18, color: scheme.error),
-                          tooltip: 'Revoke',
-                          onPressed: () => _revokeSession(context, session.id),
-                        ),
-                    ],
+                          ),
+                          if (!session.isCurrent && !session.isRevoked)
+                            IconButton(
+                              icon: Icon(Icons.block_rounded,
+                                  size: 18, color: scheme.error),
+                              tooltip: 'Revoke',
+                              onPressed: () =>
+                                  _revokeSession(context, session.id),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -528,50 +555,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final displayName = routeInfo?['route_short_name'] as String? ??
         stopInfo?['stop_name'] as String? ??
         label;
-    final subtitle = routeInfo?['route_long_name'] as String? ??
-        stopInfo?['stop_code'] as String? ??
-        '';
     final favouriteId = f['id'] as String? ?? '';
     final isOpening = _openingFavouriteId == favouriteId;
 
-    return ListTile(
+    return InkWell(
       onTap: isOpening ? null : () => _openFavourite(context, f),
-      leading: Icon(
-        type == 'route'
-            ? Icons.directions_bus_rounded
-            : Icons.location_on_rounded,
-        color: scheme.primary,
-      ),
-      title: Text(label.isNotEmpty ? label : displayName,
-          style: textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-          )),
-      subtitle: subtitle.isNotEmpty
-          ? Text(subtitle,
-              style: textTheme.bodySmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis)
-          : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isOpening)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Icon(Icons.chevron_right_rounded,
-                size: 22, color: scheme.onSurfaceVariant),
-          IconButton(
-            icon: Icon(Icons.delete_outline_rounded,
-                size: 20, color: scheme.error),
-            tooltip: 'Delete',
-            onPressed:
-                isOpening ? null : () => _deleteFavourite(context, favouriteId),
-          ),
-        ],
+      child: Padding(
+        // Symmetric horizontal padding so the row aligns with the card edges.
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              type == 'route'
+                  ? Icons.directions_bus_rounded
+                  : Icons.location_on_rounded,
+              size: 22,
+              color: scheme.primary,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label.isNotEmpty ? label : displayName,
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isOpening)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(Icons.chevron_right_rounded,
+                  size: 22, color: scheme.onSurfaceVariant),
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded,
+                  size: 20, color: scheme.error),
+              tooltip: 'Delete',
+              // Keep a 40dp hit target but zero internal padding so the
+              // delete glyph aligns with the right edge, balancing the
+              // leading icon on the left.
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              onPressed: isOpening
+                  ? null
+                  : () => _deleteFavourite(context, favouriteId),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -744,93 +779,68 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// Appearance card: the outer container itself hosts the three equal-width
+  /// theme choices (no nested segmented-button container).
   Widget _buildThemeCard(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.brightness_auto_rounded, color: scheme.primary),
-                const SizedBox(width: 12),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: widget.themeController,
+      builder: (context, mode, _) => Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            children: [
+              for (final option in const [
+                (ThemeMode.system, 'System'),
+                (ThemeMode.light, 'Light'),
+                (ThemeMode.dark, 'Dark'),
+              ])
                 Expanded(
-                  child: Text('Theme', style: textTheme.titleSmall),
+                  child: _buildThemeOption(
+                    context,
+                    option.$1,
+                    option.$2,
+                    selected: mode == option.$1,
+                    scheme: scheme,
+                    textTheme: textTheme,
+                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Changes apply instantly and reset to System on restart.',
-              style: textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            ValueListenableBuilder<ThemeMode>(
-              valueListenable: widget.themeController,
-              builder: (context, mode, _) => SegmentedButton<ThemeMode>(
-                segments: const [
-                  ButtonSegment(value: ThemeMode.system, label: Text('System')),
-                  ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                  ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
-                ],
-                selected: {mode},
-                onSelectionChanged: (selection) =>
-                    widget.themeController.setMode(selection.first),
-                showSelectedIcon: false,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildAboutCard(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Column(
-        children: [
-          ListTile(
-            leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
-            title: const Text('Version'),
-            trailing:
-                Text(AppMetadata.appVersion, style: textTheme.labelMedium),
+  /// One equal-width choice inside the appearance card.
+  Widget _buildThemeOption(
+    BuildContext context,
+    ThemeMode value,
+    String label, {
+    required bool selected,
+    required ColorScheme scheme,
+    required TextTheme textTheme,
+  }) {
+    return Material(
+      color: selected ? scheme.surfaceContainerHigh : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: () => widget.themeController.setMode(value),
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: Text(
+              label,
+              style: textTheme.labelLarge?.copyWith(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+              ),
+            ),
           ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.hub_outlined, color: scheme.primary),
-            title: const Text('Transit data'),
-            subtitle: const Text('data.gov.my GTFS & real-time feeds'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoRow(BuildContext context, String label, String value) {
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(label,
-                style: textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-          ),
-          Expanded(
-            child: Text(value, style: textTheme.bodyMedium),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -850,8 +860,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (result == null || !context.mounted) return;
     final ok = await widget.authService.updateProfile(
       fullName: result.fullName,
-      dateOfBirth:
-          result.dateOfBirth.isEmpty ? null : result.dateOfBirth,
+      dateOfBirth: result.dateOfBirth.isEmpty ? null : result.dateOfBirth,
       profileImage: result.profileImage,
     );
     if (!context.mounted) return;
@@ -1056,18 +1065,42 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
+  const _SectionHeader(this.title, {this.count, this.icon});
 
   final String title;
+  final int? count;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final titleStyle = textTheme.labelMedium?.copyWith(letterSpacing: 0.8);
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: textTheme.labelMedium?.copyWith(letterSpacing: 0.8),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: scheme.primary),
+            const SizedBox(width: 6),
+          ],
+          Text.rich(
+            TextSpan(
+              text: title.toUpperCase(),
+              children: [
+                if (count != null)
+                  TextSpan(
+                    text: ' ($count)',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
+            ),
+            style: titleStyle,
+          ),
+        ],
       ),
     );
   }

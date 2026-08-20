@@ -72,9 +72,36 @@ class JourneyController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears the origin and any planned results.
+  void clearOrigin() {
+    _origin = null;
+    _originLabel = null;
+    _options = [];
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Clears the destination and any planned results.
+  void clearDestination() {
+    _destination = null;
+    _destinationLabel = null;
+    _options = [];
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   /// Sets the provider ID for the journey search.
   void setProviderId(int? providerId) {
     _selectedProviderId = providerId;
+  }
+
+  /// Clears planned route results while keeping the origin/destination, so the
+  /// user must press "Find routes" again (e.g. after toggling the provider).
+  void clearResults() {
+    _options = [];
+    _errorMessage = null;
+    _isLoading = false;
+    notifyListeners();
   }
 
   /// Plans the journey using the API.

@@ -5,6 +5,7 @@ import '../models/transit_route.dart';
 import '../services/provider_repository.dart';
 import '../services/route_list_cache.dart';
 import '../theme/app_theme.dart';
+import '../widgets/stops/provider_switcher.dart';
 import '../widgets/stops/route_card.dart';
 import 'route_detail_screen.dart';
 
@@ -110,13 +111,6 @@ class _RoutesScreenState extends State<RoutesScreen> {
     updatedAt: DateTime(2020),
   );
 
-  TransitProvider? _providerByKey(String providerKey) {
-    for (final provider in _providers) {
-      if (provider.providerKey == providerKey) return provider;
-    }
-    return null;
-  }
-
   void _selectProvider(TransitProvider provider) {
     if (_selectedProvider?.id == provider.id) return;
     setState(() {
@@ -220,8 +214,8 @@ class _RoutesScreenState extends State<RoutesScreen> {
             const SizedBox(height: 12),
             Text(
               'Loading routes...',
-              style: textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style:
+                  textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -234,8 +228,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
       return Center(
         child: Text(
           'No routes available',
-          style: textTheme.bodyMedium
-              ?.copyWith(color: scheme.onSurfaceVariant),
+          style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
         ),
       );
     }
@@ -360,81 +353,10 @@ class _RoutesScreenState extends State<RoutesScreen> {
   }
 
   Widget _buildProviderFilters() {
-    final rapidKlTheme = ProviderTheme.of('rapid_bus_kl');
-    final feederTheme = ProviderTheme.of('rapid_bus_mrtfeeder');
-    return Row(
-      children: [
-        Expanded(
-          child: _buildFilterChip(
-            label: 'Rapid KL',
-            isSelected: _selectedProvider?.providerKey == 'rapid_bus_kl',
-            selectedColor: rapidKlTheme.primary,
-            dotColor: rapidKlTheme.primary,
-            onTap: () =>
-                _selectProvider(_providerByKey('rapid_bus_kl') ?? _rapidKl),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildFilterChip(
-            label: 'MRT Feeder',
-            isSelected: _selectedProvider?.providerKey == 'rapid_bus_mrtfeeder',
-            selectedColor: feederTheme.primary,
-            dotColor: feederTheme.primary,
-            onTap: () => _selectProvider(
-                _providerByKey('rapid_bus_mrtfeeder') ?? _mrtFeeder),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required bool isSelected,
-    required Color selectedColor,
-    required Color dotColor,
-    required VoidCallback onTap,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: isSelected ? selectedColor : scheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isSelected
-                      ? Colors.white
-                      : dotColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected
-                          ? Colors.white
-                          : scheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ProviderSwitcher(
+      providers: _providers,
+      selectedProvider: _selectedProvider,
+      onSelected: _selectProvider,
     );
   }
 
