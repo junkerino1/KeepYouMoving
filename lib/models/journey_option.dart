@@ -6,6 +6,7 @@ library;
 class JourneyOption {
   final String routeId;
   final String routeShortName;
+  final String routeLongName;
   final String routeType;
   final String stopSequence;
   final String directionId;
@@ -17,6 +18,7 @@ class JourneyOption {
   const JourneyOption({
     required this.routeId,
     required this.routeShortName,
+    required this.routeLongName,
     required this.routeType,
     required this.stopSequence,
     required this.directionId,
@@ -33,6 +35,7 @@ class JourneyOption {
     return JourneyOption(
       routeId: route['route_id'] as String? ?? '',
       routeShortName: route['route_short_name'] as String? ?? '',
+      routeLongName: route['route_long_name'] as String? ?? '',
       routeType: route['route_type'] as String? ?? '',
       stopSequence: route['stop_sequence'] as String? ?? '',
       directionId: route['direction_id'] as String? ?? '',
