@@ -658,7 +658,7 @@ class _JourneyDetailScreenState extends State<JourneyDetailScreen> {
             const SizedBox(width: 10),
             Flexible(
               child: Text(
-                option.routeShortName,
+                option.routeLongName,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
