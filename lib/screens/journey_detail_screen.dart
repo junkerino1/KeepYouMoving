@@ -285,8 +285,8 @@ class _JourneyDetailScreenState extends State<JourneyDetailScreen> {
       children: [
         TileLayer(
           urlTemplate: isDark
-              ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-              : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+              ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2tzl_1_e8643468fcea1160b9bd9792'
+              : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_2tzl_1_e8643468fcea1160b9bd9792',
           retinaMode: RetinaMode.isHighDensity(context),
           userAgentPackageName: 'com.example.gtfs_rapid_flutter',
         ),

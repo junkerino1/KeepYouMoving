@@ -448,8 +448,8 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                   initialCenter: LatLng(widget.latitude, widget.longitude),
                   initialZoom: 20.0,
                   tileUrlTemplate: Theme.of(context).brightness == Brightness.dark
-                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                      : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                      ? 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2tzl_1_e8643468fcea1160b9bd9792'
+                      : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_2tzl_1_e8643468fcea1160b9bd9792',
                   polylines: polylines,
                   markerLayers: markerLayers,
                 ),
