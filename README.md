@@ -44,25 +44,27 @@ Transit data is sourced from the
 
 ### Implemented
 
-- **Track buses around you** — See your current location on the map and find nearby bus stops without having to search for them manually.
-- **Choose your transport service** — Switch between Rapid KL Bus and Rapid KL MRT Feeder services, with each service having its own visual identity.
-- **Find the route you need** — Browse available routes or search for a specific route to quickly find the one you're looking for.
-- **See the full route** — Open a route to view its stops in order and switch between different directions of travel.
-- **Check buses in real time** — View buses currently operating along a route, including their location, speed and vehicle plate number where available.
-- **Know when your bus is coming** — Check upcoming departures and live ETA information for a selected stop, with information refreshed automatically.
-- **View routes directly on the map** — See the route path, bus stops and active buses together on the map to get a better idea of where your bus is.
-- **Check the timetable** — Look up scheduled departures by service, route and stop, including operating days and expected intervals between buses.
-- **Open timetables directly** — Jump straight to a specific stop or route's timetable instead of navigating through the entire timetable menu.
-- **Light and dark mode** — Choose between light mode, dark mode or follow your device's system setting.
+- **Track buses around you** — See your current location on the map, find nearby stops, and center the map around your device with live GPS updates.
+- **Choose your transport service** — Switch between Rapid KL Bus and Rapid KL MRT Feeder services, with each service using its own branded visual identity.
+- **Find the route you need** — Browse available routes or search for a specific route from a provider-specific list and map search interface.
+- **See the full route** — Open a route to view its stops in order, switch directions, and inspect the active route geometry on the map.
+- **Check buses in real time** — View live vehicles currently operating along a route, including their position, speed, direction, and plate information where available.
+- **Know when your bus is coming** — Check upcoming departures and live ETA information for a selected stop, refreshed automatically for the current route context.
+- **View routes directly on the map** — See route polylines, bus stops, live vehicle markers, and user position together on the map.
+- **Check the timetable** — Look up scheduled departures by provider, route, and stop, including service-day and departure timing information.
+- **Open timetables directly** — Jump straight to a route or stop timetable from deep links and context-aware navigation flows.
+- **Plan a journey end-to-end** — Search for origin and destination places, plan multi-leg journeys, compare transit options, and inspect walking + transit geometry on a detailed map.
+- **Save favourites** — Sign in with Google to save and reopen favourite routes and stops from the profile screen.
+- **Account-aware profile experience** — View account details, session history, sign in/out flows, profile photo support, and version/about information.
+- **Light and dark mode** — Choose between light mode, dark mode, or follow your device's system setting.
 - **Responsive interface** — The layout adapts to different screen sizes, using bottom navigation on phones and a navigation rail on larger screens.
-- **Protected API access** — The app performs a secure verification process before accessing the public transport services.
+- **Protected API access** — The app performs a secure bootstrap flow before interacting with the public transport services, including PoW token handling and secure local storage.
 
-### Planned / not yet implemented
+### Current app scope
 
-- Saving favorite stops and routes (the Profile screen shows a placeholder:
-  "Saving favorites is coming soon").
-- The bundled `providers.json` lists 15 transit providers, but the app UI
-  currently exposes only the two "dev" providers (Rapid KL Bus and MRT Feeder).
+- The app supports OAuth-based Google sign-in and persisted account sessions.
+- Favourite routes and stops are supported for signed-in users and wired into the profile and map/detail screens.
+- The bundled `providers.json` metadata includes more providers than the current UI exposes; the app currently focuses on the Rapid KL Bus and MRT Feeder dev flow for the primary experience.
 
 ## Tech Stack
 
@@ -95,27 +97,29 @@ then configures the authenticated API client. Every transit request then carries
 ```mermaid
 flowchart TD
     subgraph App["Keep You Moving (Flutter)"]
-        UI["Screens<br/>Bootstrap · Live Map · Routes · Route/Stop Detail · Timetable · Profile"]
-        CTRL["Controllers (ChangeNotifier)<br/>StopController · RouteController · TimetableController · ThemeController"]
-        SVC["Services<br/>ApiService · BootstrapService · PowTokenService · TurnstileService<br/>DeviceIdentity · SecureTokenStore · ProviderRepository · RouteListCache"]
-        MOD["Models<br/>TransitProvider · TransitRoute · Stop · RouteStop · RouteSchedule · EtaDeparture"]
+        UI["Screens<br/>Bootstrap · Live Map · Routes · Route/Stop Detail · Journey Planner · Timetable · Profile"]
+        CTRL["Controllers (ChangeNotifier)<br/>StopController · RouteController · JourneyController · TimetableController · ThemeController"]
+        SVC["Services<br/>ApiService · AuthService · FavouriteService · BootstrapService · PowTokenService · TurnstileService<br/>DeviceIdentity · SecureTokenStore · ProviderRepository · RouteListCache · AppLocationService"]
+        MOD["Models<br/>TransitProvider · TransitRoute · Stop · RouteStop · RouteSchedule · EtaDeparture · Account · Session · Favourite"]
         UI --> CTRL --> SVC
         SVC --> MOD
     end
 
     subgraph Backend["RapidTransit backend"]
-        API["REST API<br/>/public-transport/*  +  /security/*"]
+        API["REST API<br/>/public-transport/* + /security/* + account/favourite endpoints"]
     end
 
     TURN["Cloudflare Turnstile<br/>(invisible/headless)"]
     TILES["CARTO / OpenStreetMap tiles"]
     GPS["geolocator GPS"]
+    AUTH["Google OAuth + account session"]
 
     SVC -->|"GET/POST + x-pow-token + x-device-id"| API
     SVC -->|"headless challenge → token"| TURN
     CTRL -->|"theme-aware tile sets"| TILES
     UI -->|"user position"| GPS
-    SVC -->|"flutter_secure_storage"| SEC[("Encrypted store<br/>device_id, pow_token, expiry")]
+    AUTH -->|"browser callback + session token"| SVC
+    SVC -->|"flutter_secure_storage"| SEC[("Encrypted store<br/>device_id, session token, pow_token, expiry")]
 ```
 
 **Typical data flow:**
@@ -136,33 +140,42 @@ flowchart TD
 ```
 my_bus_tracker/
 ├── lib/
-│   ├── main.dart                     # App entry; wires ThemeController + BootstrapService
+│   ├── main.dart                     # App entry; wires ThemeController + AuthService + BootstrapService
 │   ├── config/
 │   │   ├── api_config.example.dart   # Template (committed) — copy to api_config.dart
 │   │   └── api_config.dart           # Local config (git-ignored) — base URLs, Turnstile key
 │   ├── controllers/                  # ChangeNotifier/ValueNotifier UI state
 │   │   ├── stop_controller.dart      #   nearest stops + per-stop routes
 │   │   ├── route_controller.dart     #   route stops, geometry, ETA departures
+│   │   ├── journey_controller.dart   #   journey planning + boarding ETA fetches
 │   │   ├── timetable_controller.dart #   provider → route → stop → schedule chain
 │   │   └── theme_controller.dart     #   app theme mode (session-only)
 │   ├── models/                       # Plain Dart models with defensive JSON parsing
+│   │   ├── account.dart
+│   │   ├── session.dart
+│   │   ├── favourite.dart
 │   │   ├── transit_provider.dart
 │   │   ├── transit_route.dart
 │   │   ├── stop.dart
 │   │   ├── route_stop.dart
 │   │   ├── route_schedule.dart
-│   │   └── eta_departure.dart        #   incl. LiveVehicle / VehiclePosition
+│   │   └── eta_departure.dart        #   incl. live vehicle / vehicle-position models
 │   ├── screens/                      # Thin screen compositors
 │   │   ├── bootstrap_screen.dart     #   splash + progress + retry
 │   │   ├── home_screen.dart          #   bottom nav / navigation rail shell
-│   │   ├── live_map_screen.dart      #   map + nearest stops + search
+│   │   ├── live_map_screen.dart      #   map + nearest stops + search + route context
+│   │   ├── journey_planner_screen.dart#  origin/destination search + journey results
+│   │   ├── journey_detail_screen.dart#  walking + transit route detail map and ETA sheet
 │   │   ├── routes_screen.dart        #   searchable route list
 │   │   ├── route_detail_screen.dart  #   stop timeline + direction toggle
 │   │   ├── stop_detail_screen.dart   #   map, polyline, live buses, ETA
 │   │   ├── timetable_screen.dart     #   static departure times
-│   │   └── profile_screen.dart       #   theme picker + about
-│   ├── services/                     # Networking, security, caching
-│   │   ├── api_service.dart          #   HTTP client; attaches auth headers
+│   │   └── profile_screen.dart       #   Google sign-in, favourites, theme, account info
+│   ├── services/                     # Networking, security, caching, auth
+│   │   ├── api_service.dart          #   HTTP client; attaches auth + device headers
+│   │   ├── auth_service.dart         #   Google OAuth + account session lifecycle
+│   │   ├── favourite_service.dart    #   favourite routes/stops sync with backend
+│   │   ├── app_location_service.dart #   single permission + stream handling
 │   │   ├── bootstrap_service.dart    #   launch orchestration (single-flight)
 │   │   ├── pow_token_service.dart    #   PoW token lifecycle (reuse/refresh)
 │   │   ├── turnstile_service.dart    #   headless Cloudflare Turnstile
@@ -175,9 +188,9 @@ my_bus_tracker/
 │   ├── utils/
 │   │   ├── api_envelope.dart         # Envelope extraction helpers
 │   │   └── format.dart               # Distance / speed / hex-color helpers
-│   └── widgets/                      # Reusable UI pieces (map, sheets, stops, live bus)
+│   └── widgets/                      # Reusable UI pieces (map, sheets, stops, live bus, favourites)
 ├── assets/
-│   ├── data/providers.json           # Bundled GTFS provider metadata (15 providers)
+│   ├── data/providers.json           # Bundled GTFS provider metadata
 │   └── logo.png                      # App logo (placeholder — replace with final brand)
 ├── android/                          # Android host (see Requirements)
 ├── ios/                              # iOS host
@@ -446,8 +459,11 @@ you.").
 The following is implemented in this repository:
 
 - **Secure local token storage** — `SecureTokenStore` (wrapping
-  `flutter_secure_storage`) stores the device ID, the PoW token, and its expiry
-  in encrypted storage, never plain preferences.
+  `flutter_secure_storage`) stores the device ID, the session token, the PoW
+  token, and its expiry in encrypted storage, never plain preferences.
+- **Account sessions and Google OAuth** — `AuthService` restores the signed-in
+  account from secure storage, opens the Google OAuth flow in the browser, and
+  exchanges the deep-link callback for a backend session token.
 - **Device identification** — `DeviceIdentity` generates a cryptographically
   random UUID v4 once per install and persists it. It is sent with the PoW
   exchange so the returned token is **device-bound**.
@@ -460,10 +476,13 @@ The following is implemented in this repository:
 - **Token expiration / refresh** — `PowTokenService` reuses a stored token until
   it is within 5 minutes of expiry, then refreshes via a fresh Turnstile
   challenge + exchange. Errors are never cached, so retries re-run the flow.
+- **Favourites sync** — `FavouriteService` loads, creates, updates, and deletes
+  saved routes/stops for signed-in users and is surfaced from the profile and
+  detail views.
 - **Single-flight bootstrap** — `BootstrapService.start()`/`retry()` are
   single-flight, so duplicate concurrent bootstrap runs cannot happen.
 
-**Not implemented:** Google OAuth login has not been implemented. Will Implement this in the future.
+**Implemented:** Google OAuth login is wired up end-to-end, account sessions are restored from encrypted storage, and the profile screen exposes the signed-in account, session history, and favourites sync flow.
 
 ## Troubleshooting
 
