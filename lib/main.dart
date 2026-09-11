@@ -56,7 +56,7 @@ class _RapidTransitAppState extends State<RapidTransitApp> {
           authService: _authService,
           favouriteService: _favouriteService,
           child: MaterialApp(
-            title: 'RapidTransit KL',
+            title: 'Keep You Moving',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
