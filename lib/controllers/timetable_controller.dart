@@ -69,6 +69,19 @@ class TimetableController extends ChangeNotifier {
     return null;
   }
 
+  /// Long name of the currently selected route, if any. Falls back to the
+  /// short name when the long name is not available.
+  String? get currentRouteLongName {
+    final id = _selectedRouteId;
+    if (id == null) return null;
+    for (final r in _routes) {
+      if (r.routeId == id) {
+        return r.routeLongName.isNotEmpty ? r.routeLongName : r.routeShortName;
+      }
+    }
+    return null;
+  }
+
   /// Label of the currently selected stop (name), if any.
   String? get currentStopLabel {
     final id = _selectedStopId;

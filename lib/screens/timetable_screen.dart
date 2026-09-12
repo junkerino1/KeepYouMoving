@@ -49,15 +49,10 @@ class TimetableScreen extends StatefulWidget {
 class _TimetableScreenState extends State<TimetableScreen> {
   final TimetableController _controller = TimetableController();
 
-  /// Drives the timetable list so it can auto-scroll to the next departure.
   final ScrollController _scrollController = ScrollController();
 
-  /// Fixed row height for the timetable list; keeps the auto-scroll offset
-  /// math (next index × row extent) exact.
   static const double _rowExtent = 56;
 
-  /// Key of the schedule (serviceDate + stop) we last auto-scrolled for, so
-  /// the scroll transition runs once per freshly-loaded timetable.
   String? _lastAutoScrolledKey;
 
   @override
@@ -120,7 +115,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
               _buildDropdown(
                 label: 'Route',
                 value: _controller.selectedRouteId,
-                currentLabel: _controller.currentRouteLabel,
+                currentLabel: _controller.currentRouteLongName,
                 options: [
                   for (final r in _controller.routes)
                     _SearchOption(
@@ -210,12 +205,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     'Sunday',
   ];
 
-  /// Today's weekday name, e.g. `Saturday` (`DateTime.weekday` is 1–7).
   String get _todayWeekdayName => _weekdayNames[DateTime.now().weekday - 1];
 
-  /// Whether the schedule's operating calendar includes today
-  /// (case-insensitive). An empty list means the calendar is unknown and is
-  /// treated as operating.
   bool _operatesToday(List<String> operatingDays) {
     if (operatingDays.isEmpty) return true;
     final today = _todayWeekdayName.toLowerCase();
@@ -233,16 +224,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return 'Select a route and stop to view its timetable.';
   }
 
-  /// Meaningful label for the next departure: includes the live countdown when
-  /// the schedule is for today, otherwise a plain "next departure".
   String _nextDepartureLabel(int? minutesUntil) {
     if (minutesUntil == null) return 'Next departure';
     if (minutesUntil <= 0) return 'Next departure · now';
     return 'Next departure · $minutesUntil min';
   }
 
-  /// Opens the stop-detail screen for the selected stop/route, mirroring the
-  /// live map's stop-detail navigation.
   void _openStopDetail() {
     final provider = _controller.selectedProvider;
     final stopId = _controller.selectedStopId;
@@ -257,8 +244,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
       }
     }
     if (stop == null) return;
-    // Local final so the non-null type is preserved inside the route builder
-    // closure below (type promotion doesn't carry into closures).
     final selectedStop = stop;
 
     TransitRoute? route;
@@ -315,8 +300,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
     final times = schedule.allTimes;
 
-    // Explicit "not in service" state when the route doesn't run today, so
-    // the list never looks like a valid timetable on an off day.
     if (!_operatesToday(schedule.operatingDays)) {
       return _buildNotInService(scheme, textTheme);
     }
@@ -330,7 +313,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
       );
     }
 
-    // Highlight "next" and "departed" only when the schedule is for today.
     int? nextIndex;
     final nowMinutes = DateTime.now().hour * 60 + DateTime.now().minute;
     final isToday = _isScheduleToday(schedule.serviceDate);
@@ -343,9 +325,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
       }
     }
 
-    // Auto-scroll once from the top to the next departure (only when it's not
-    // already the first row), keyed per schedule+stop so a freshly loaded
-    // timetable re-runs the transition.
     final scrollKey = '${schedule.serviceDate}|${schedule.stopId}';
     if (isToday &&
         nextIndex != null &&
@@ -354,8 +333,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
       _lastAutoScrolledKey = scrollKey;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_scrollController.hasClients) return;
-        // Center the upcoming departure in the viewport so departed rows stay
-        // visible above it and future rows below — the upcoming is the focus.
         final upcomingOffset = nextIndex! * _rowExtent;
         final target = (upcomingOffset -
                 (_scrollController.position.viewportDimension / 2) +
@@ -410,10 +387,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  // Time — one uniform theme font for every row (same type
-                  // family); the upcoming departure is scaled up and coloured
-                  // primary so it's the obvious focal point, while departed
-                  // times are deliberately much lighter.
                   Text(
                     _formatTime(times[index]),
                     style:
@@ -448,7 +421,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// Shown when the selected route doesn't operate on the current day.
   Widget _buildNotInService(ColorScheme scheme, TextTheme textTheme) {
     final days = _serviceLabel();
     return Center(
@@ -479,7 +451,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
       ),
     );
   }
-
+  
   Widget _buildErrorState(ColorScheme scheme, TextTheme textTheme) {
     return Center(
       child: Padding(
@@ -510,7 +482,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// Provider toggle using the shared ProviderSwitcher widget.
   Widget _buildProviderFilters() {
     return ProviderSwitcher(
       providers: _controller.providers,
@@ -519,7 +490,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// Tappable field that opens a searchable bottom-sheet picker.
   Widget _buildDropdown({
     required String label,
     required String? value,
@@ -580,8 +550,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// Shows a modal with a search box + filtered list; returns the picked
-  /// option through [onSelected] (only when one is chosen).
   Future<void> _openSearchablePicker({
     required String title,
     required List<_SearchOption> options,
@@ -699,7 +667,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     }
   }
 
-  /// `HH:mm:ss` → minutes of the day.
   int _minutesOfDay(String hhmmss) {
     final parts = hhmmss.split(':');
     final h = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
@@ -707,7 +674,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return h * 60 + m;
   }
 
-  /// `HH:mm:ss` → e.g. `5:22 AM`.
   String _formatTime(String hhmmss) {
     final parts = hhmmss.split(':');
     final h = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
@@ -717,7 +683,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return '$hour12:${m.toString().padLeft(2, '0')} $ampm';
   }
 
-  /// `20260729` vs today's `yyyyMMdd`.
   bool _isScheduleToday(String serviceDate) {
     final now = DateTime.now();
     final today = '${now.year.toString().padLeft(4, '0')}'
@@ -727,8 +692,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
   }
 }
 
-/// Primary pill for the next departure; tapping it opens the stop-detail
-/// screen for the selected stop/route.
 class _NextBadge extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
